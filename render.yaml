@@ -1,0 +1,43 @@
+# Servicio de Talks en Render (Blueprint propio, aparte del del Hub: un cambio del Hub reinicia su API
+# y no debe cortar sesiones en vivo). Las llaves NO van aquí: se pegan en el panel de Render (sync: false).
+services:
+  - type: web
+    name: talks
+    runtime: node
+    region: virginia # igual que el API del Hub
+    plan: starter # el más barato que no se duerme (los de plan gratis se duermen y cortarían una sesión)
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/salud
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      - key: AUTH_MODE
+        value: supabase
+      - key: URL_PUBLICA
+        value: https://talks.mx
+      # Firma los pases de los participantes: Render la genera una vez y la conserva.
+      - key: APP_SECRET
+        generateValue: true
+      # Cuenta de LiveKit propia de Talks.
+      - key: LIVEKIT_WS_URL
+        sync: false
+      - key: LIVEKIT_HTTP_URL
+        sync: false
+      - key: LIVEKIT_API_KEY
+        sync: false
+      - key: LIVEKIT_API_SECRET
+        sync: false
+      # Los mismos valores que usa el servicio del Hub (login del equipo por correo).
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      # Correos del equipo que pueden entrar (separados por coma).
+      - key: EQUIPO_PERMITIDO
+        sync: false
+      # Llave con la que el Hub crea sesiones por API.
+      - key: HUB_API_KEY
+        sync: false

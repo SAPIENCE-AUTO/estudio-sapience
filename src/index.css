@@ -1,0 +1,38 @@
+@import "tailwindcss";
+
+/* Look aprobado: claro, Poppins, teal del Hub; el dorado solo para «Tú» y los highlights. */
+@theme {
+  --font-sans: "Poppins", system-ui, sans-serif;
+  --color-fondo: #f3f6f7;
+  --color-tarjeta: #ffffff;
+  --color-borde: #d9e3e7;
+  --color-borde-fuerte: #c5d2d8;
+  --color-texto: #0f2a33;
+  --color-tenue: #5b687b;
+  --color-teal: #0f3d4d;
+  --color-teal-claro: #e3eef1;
+  --color-gris-boton: #edf2f4;
+  --color-oro: #f4c025;
+  --color-oro-texto: #0a303d;
+  --color-ok: #1f7a52;
+  --color-ok-fondo: #e3f4ec;
+  --color-aviso: #dc7a09;
+  --color-peligro: #b91c1c;
+  --color-peligro-fondo: #fbe4e4;
+  --color-video: #dce8ec;
+  --color-video-2: #cfe0e6;
+  --color-silueta: #b5cbd3;
+}
+
+html, body, #raiz { height: 100%; }
+body { margin: 0; background: var(--color-fondo); color: var(--color-texto); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+button { font-family: inherit; cursor: pointer; }
+button:disabled { cursor: default; opacity: .55; }
+:focus-visible { outline: 2px solid var(--color-teal); outline-offset: 2px; }
+
+/* El video propio se ve como espejo, como en cualquier videollamada. */
+.espejo { transform: scaleX(-1); }
+
+@keyframes entra { from { opacity: 0; } to { opacity: 1; } }
+.fundido { animation: entra .25s ease-out both; }
+@media (prefers-reduced-motion: reduce) { .fundido { animation: none; } }
