@@ -8,6 +8,7 @@ import { guardarPronto, cargar } from './almacen';
 import { difundir } from './difusion';
 import { firmarPase } from './auth';
 import * as lk from './livekit';
+import { config } from './config';
 
 const sesiones: Record<string, d.Sesion> = cargar();
 const filas = new Map<string, Promise<unknown>>();
@@ -163,9 +164,41 @@ export async function tokenParaEquipo(sid: string, equipoId: string): Promise<Re
 }
 
 // ---------- presencia (canal en vivo abierto o cerrado) ----------
+// ---------- desconexiones ----------
+// Quien se desconecta sigue en su lugar (viñeta apagada, «Sin conexión») durante un rato: las redes flojas se reconectan solas y no hay
+// que volver a subirlo. Si no regresa, el servidor lo manda al lobby; ahí no se ve mientras siga sin conexión y reaparece si vuelve.
+const gracia = new Map<string, NodeJS.Timeout>();
+
+function vigilarAusencia(sid: string, pid: string): void {
+  const clave = `${sid}:${pid}`;
+  clearTimeout(gracia.get(clave));
+  gracia.set(clave, setTimeout(() => {
+    gracia.delete(clave);
+    void regresarPorAusencia(sid, pid).catch(() => undefined);
+  }, config.GRACIA_DESCONEXION_SEGUNDOS * 1000));
+}
+
+async function regresarPorAusencia(sid: string, pid: string): Promise<void> {
+  if (!sesiones[sid]) return;
+  await transaccion(sid, async (s) => {
+    const p = s.participantes[pid];
+    if (!p || p.conectado || p.lugar === 'lobby' || s.terminada) return;
+    d.regresarALobby(s, pid);
+    await permisosPorLugar(s, pid, 'lobby');
+  });
+}
+
 export function conexion(sid: string, quien: { participanteId?: string; equipoId?: string }, conectado: boolean): Promise<void> {
   if (!sesiones[sid]) return Promise.resolve();
+  const pid = quien.participanteId;
+  if (pid) { if (conectado) { clearTimeout(gracia.get(`${sid}:${pid}`)); gracia.delete(`${sid}:${pid}`); } else vigilarAusencia(sid, pid); }
   return transaccion(sid, async (s) => { d.marcarConexion(s, quien, conectado); });
+}
+
+// Tras reiniciar el servidor nadie está conectado todavía: quien estaba adentro tiene el mismo plazo para volver.
+for (const s of Object.values(sesiones)) {
+  if (s.terminada) continue;
+  for (const p of Object.values(s.participantes)) if (p.lugar !== 'lobby' && !p.conectado) vigilarAusencia(s.id, p.id);
 }
 
 export function terminar(sid: string): Promise<RespuestaAccion> {

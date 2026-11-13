@@ -441,7 +441,8 @@ async function main() {
       const color = await consola.evaluate(() => getComputedStyle(document.querySelector('[data-testid="lista-escenario"]')!).backgroundColor);
       anotar('El fondo negro se pinta de verdad', color === 'rgb(20, 24, 26)', color);
       await foto(consola, '11-consola-fila-circulos-completo-negro');
-      await clic(consola, 'forma-redondeada'); await clic(consola, 'ajuste-llenar'); await clic(consola, 'fondo-gris'); await dormir(400);
+      await clic(consola, 'forma-redondeada'); await clic(consola, 'ajuste-llenar'); await clic(consola, 'fondo-gris'); await dormir(900); // tres cambios seguidos, sin pausa
+      anotar('Tres cambios de diseño muy seguidos no se pisan entre sí', (await todasCon('data-forma', 'redondeada')) && (await todasCon('data-ajuste', 'llenar')) && (await todasCon('data-fondo', 'gris')));
       await elegir('auto');
       anotar('Regresar a automático lo cambia en todas las pantallas', await todasVen('auto'));
       await degradar(b); await degradar(a);
@@ -456,22 +457,48 @@ async function main() {
       anotar(`Regresar a ${c} al lobby`, true, `${Math.round(ahora() - t0)} ms`);
     }
 
-    // ── Alguien se desconecta estando en backstage: se le puede regresar al lobby y se queda ahí (antes volvía a backstage) ──
+    // ── Desconexiones: la viñeta se apaga con aviso, se puede mover aunque esté desconectada, y si no regresa el servidor la manda al lobby ──
     {
-      const dora = await entrarComo('Dora');
-      await esperar(consola, JS.enSeccion('lista-lobby', 'Dora'));
-      await clic(consola, 'llamar-Dora'); await esperar(dora, JS.lugar('verde'));
-      await clic(consola, 'pasar-Dora'); await esperar(consola, JS.enSeccion('lista-backstage', 'Dora'));
-      await dora.close(); // se cae su conexión
+      const enBackstage = (q: string) => `!!document.querySelector('[data-testid="lista-backstage"] [data-testid="mosaico-${q}"]')`;
+      const aBackstage = async (nombre: string) => {
+        const pg = await entrarComo(nombre);
+        await esperar(consola, JS.enSeccion('lista-lobby', nombre));
+        await clic(consola, `llamar-${nombre}`); await esperar(pg, JS.lugar('verde'));
+        await clic(consola, `pasar-${nombre}`); await esperar(consola, JS.enSeccion('lista-backstage', nombre));
+        return pg;
+      };
+      // Todos los de backstage se ven opacos (velo claro).
+      const velos = Boolean(await consola.evaluate(() => { const t = [...document.querySelectorAll('[data-testid^="tarjeta-backstage-"]')]; return t.length > 0 && t.every((x) => !!x.querySelector('.bg-white\\/55')); }));
+      anotar('Todas las viñetas de backstage se ven opacas (y hay al menos una)', velos);
+      await foto(consola, '12-backstage-opaco');
+
+      // Dora se desconecta y se le manda al lobby durante el plazo (antes el cambio se cancelaba y volvía a backstage).
+      const dora = await aBackstage('Dora');
+      await dora.close();
       await esperar(consola, `document.querySelector('[data-testid="tarjeta-backstage-Dora"]')?.innerText.includes('Sin conexión')`, null, 20000);
-      anotar('Al desconectarse, la consola marca «Sin conexión» a quien estaba en backstage', true);
+      anotar('Al desconectarse, su viñeta de backstage dice «Sin conexión»', true);
       await dormir(6000); // para que LiveKit ya no la encuentre
       await clic(consola, 'lobby-Dora');
-      await esperar(consola, JS.enSeccion('lista-lobby', 'Dora'), null, 8000);
+      await esperar(consola, JS.noHay('[data-testid="lista-backstage"] [data-testid="mosaico-Dora"]'), null, 8000);
       await dormir(3000);
-      const sigue = await consola.evaluate(() => !!document.querySelector('[data-testid="lista-lobby"] [data-testid="fila-lobby-Dora"]') && !document.querySelector('[data-testid="lista-backstage"] [data-testid="mosaico-Dora"]'));
+      const vuelve = await consola.evaluate(enBackstage('Dora'));
       const aviso = await consola.evaluate(() => document.querySelector('[data-testid="aviso"]')?.textContent ?? '');
-      anotar('Regresar al lobby a alguien desconectado funciona y se queda ahí', sigue, aviso ? `aviso: ${aviso}` : '');
+      anotar('Mandar al lobby a alguien desconectado funciona y no vuelve a backstage', !vuelve, aviso ? `aviso: ${aviso}` : '');
+      const enListaLobby = await consola.evaluate(() => !!document.querySelector('[data-testid="fila-lobby-Dora"]'));
+      anotar('Quien está en el lobby sin conexión no aparece en la lista', !enListaLobby);
+
+      // Eva se desconecta y nadie la mueve: pasado el plazo desaparece sola de backstage.
+      const eva = await aBackstage('Eva');
+      await eva.close();
+      const t0 = ahora();
+      await esperar(consola, `document.querySelector('[data-testid="tarjeta-backstage-Eva"]')?.innerText.includes('Sin conexión')`, null, 20000);
+      await dormir(4000);
+      anotar('Al desconectarse sigue unos segundos en backstage (las redes flojas se reconectan solas)', Boolean(await consola.evaluate(enBackstage('Eva'))));
+      await esperar(consola, JS.noHay('[data-testid="lista-backstage"] [data-testid="mosaico-Eva"]'), null, 60000);
+      const seFue = Math.round((ahora() - t0) / 1000);
+      anotar('Si no regresa, desaparece sola de backstage', true, `${seFue} s`);
+      const enLobbyVisible = await consola.evaluate(() => !!document.querySelector('[data-testid="fila-lobby-Eva"]'));
+      anotar('Y tampoco aparece en el lobby mientras siga sin conexión', !enLobbyVisible);
     }
 
     // ── Terminar ──

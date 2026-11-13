@@ -82,14 +82,12 @@ function ClicParaMover({ texto, onClick, ...resto }: { texto: string; onClick: (
   );
 }
 
-/** La persona se desconectó: su viñeta se apaga y lo dice con ícono y texto. Se le puede mover igual (a lobby, a la sala verde...). */
+/** Velo claro: así se ven las viñetas de backstage (el equipo las ve opacas) y las de quien se desconectó. */
+const Velo = () => <div className="pointer-events-none absolute inset-0 bg-white/55" aria-hidden="true" />;
+
+/** La persona se desconectó: lo dice con ícono y texto. Se le puede mover igual; si no regresa en un rato, el servidor la manda al lobby. */
 function SinConexion() {
-  return (
-    <>
-      <div className="pointer-events-none absolute inset-0 bg-white/60" aria-hidden="true" />
-      <span data-testid="sin-conexion" className="pointer-events-none absolute right-2 top-2 z-[2] inline-flex items-center gap-1 rounded-md bg-atencion px-1.5 py-0.5 text-[11px] font-semibold text-white"><WifiOff size={11} aria-hidden="true" />Sin conexión</span>
-    </>
-  );
+  return <span data-testid="sin-conexion" className="pointer-events-none absolute right-2 top-2 z-[2] inline-flex items-center gap-1 rounded-md bg-atencion px-1.5 py-0.5 text-[11px] font-semibold text-white"><WifiOff size={11} aria-hidden="true" />Sin conexión</span>;
 }
 
 /** Quitar o permitir el micrófono de un participante. Permitirlo no lo enciende: él decide cuándo hablar. */
@@ -214,7 +212,7 @@ function PanelVerde({ p, room, yo, ejecutar }: { p: ParticipantePublico; room: R
   useCambiosDeSala(room ?? null);
   return (
     <div className="flex flex-col gap-2" data-testid={`panel-verde-${p.nombre}`}>
-      <Mosaico nombre={p.nombre} pista={room ? camaraDe(room, p.id) : null} className="aspect-video w-full rounded-xl" />
+      <Mosaico nombre={p.nombre} pista={room ? camaraDe(room, p.id) : null} className="aspect-video w-full rounded-xl">{!p.conectado && <><Velo /><SinConexion /></>}</Mosaico>
       {sonidosDe(room ?? null).map((t) => <AudioRemoto key={t.sid} pista={t} />)}
       <div className="flex gap-2">
         <Boton principal data-testid={`pasar-${p.nombre}`} className="flex-1" onClick={() => ejecutar('pasar', p.id)}>Pasar a la sesión</Boton>
@@ -230,6 +228,21 @@ export default function Consola() {
   const { estado, conectado, participantes, ejecutar, aviso, limpiarAviso, setAviso } = useConsola(sid);
   const salaSesion = useSalaSesion(sid, !!estado);
   useCambiosDeSala(salaSesion);
+  // Dos cambios de diseño muy seguidos no deben pisarse: cada uno parte de lo último que se pidió, no de lo último que llegó.
+  const disenoPedido = useRef<Diseno | null>(null);
+  const disenosEnVuelo = useRef(0);
+  const disenoDelServidor = JSON.stringify(estado?.diseno ?? null);
+  useEffect(() => { if (disenosEnVuelo.current === 0) disenoPedido.current = estado?.diseno ?? null; }, [disenoDelServidor]); // eslint-disable-line react-hooks/exhaustive-deps
+  const elegirDiseno = (parche: Partial<Diseno>) => {
+    const base = disenoPedido.current ?? estado?.diseno;
+    if (!base) return;
+    const nuevo = { ...base, ...parche };
+    disenoPedido.current = nuevo;
+    disenosEnVuelo.current += 1;
+    api.diseno(sid, nuevo)
+      .catch(() => { disenoPedido.current = estado?.diseno ?? null; setAviso('No se pudo cambiar el diseño'); })
+      .finally(() => { disenosEnVuelo.current -= 1; });
+  };
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
   const [ahora, setAhora] = useState(Date.now());
@@ -269,7 +282,8 @@ export default function Consola() {
 
   if (!estado) return <div className="p-6 text-sm text-tenue">Conectando…</div>;
 
-  const delLobby = participantes.filter((p) => p.lugar === 'lobby');
+  // Quien está en el lobby sin conexión no se muestra (no se le puede llamar); reaparece si vuelve.
+  const delLobby = participantes.filter((p) => p.lugar === 'lobby' && p.conectado);
   const enVerde = participantes.filter((p) => p.lugar === 'verde');
   const enBackstage = participantes.filter((p) => p.lugar === 'backstage');
   const enPantalla = participantes.filter((p) => p.lugar === 'escenario');
@@ -294,7 +308,7 @@ export default function Consola() {
       id: p.id,
       nodo: (
         <Mosaico nombre={p.nombre} pista={camaraDe(salaSesion, p.id)} className="h-full w-full">
-          {!p.conectado && <SinConexion />}
+          {!p.conectado && <><Velo /><SinConexion /></>}
           <ClicParaMover data-testid={`bajar-${p.nombre}`} texto="Clic para bajar a backstage" onClick={() => ejecutar('bajar', p.id)} />
           <BotonMicrofono p={p} sid={sid} onError={setAviso} />
         </Mosaico>
@@ -331,7 +345,7 @@ export default function Consola() {
               <BotonControl data-testid="boton-mic" activo={micOn} encendido={{ icono: <Mic size={22} aria-hidden="true" />, texto: 'Silenciar mi micrófono' }} apagado={{ icono: <MicOff size={22} aria-hidden="true" />, texto: 'Activar mi micrófono' }} onClick={() => setMicOn(!micOn)} />
               <BotonControl data-testid="boton-cam" activo={camOn} encendido={{ icono: <IconoVideo size={22} aria-hidden="true" />, texto: 'Apagar mi cámara' }} apagado={{ icono: <VideoOff size={22} aria-hidden="true" />, texto: 'Encender mi cámara' }} onClick={() => setCamOn(!camOn)} />
               <SelectorDiseno diseno={estado.diseno} personas={enEscena.map((v) => ({ id: v.id, nombre: estado.equipo.find((m) => m.id === v.id)?.nombre ?? participantes.find((p) => p.id === v.id)?.nombre ?? '' }))}
-                onElegir={(parche) => void api.diseno(sid, { ...estado.diseno, ...parche }).catch(() => setAviso('No se pudo cambiar el diseño'))} />
+                onElegir={elegirDiseno} />
               <Boton data-testid="mi-escenario" onClick={alternarEscenario}>
                 <span className="inline-flex items-center gap-1.5"><ArrowRightLeft size={14} aria-hidden="true" />{enEscenario ? 'Ir a backstage' : 'Subirme al escenario'}</span>
               </Boton>
@@ -371,6 +385,7 @@ export default function Consola() {
               {enBackstage.map((p) => (
                 <div key={p.id} className="flex w-52 flex-col gap-1.5" data-testid={`tarjeta-backstage-${p.nombre}`}>
                   <Mosaico nombre={p.nombre} pista={camaraDe(salaSesion, p.id)} className="aspect-video rounded-xl">
+                    <Velo />
                     <ClicParaMover data-testid={`subir-${p.nombre}`} texto="Clic para subir al escenario" onClick={() => ejecutar('subir', p.id)} />
                     <BotonMicrofono p={p} sid={sid} onError={setAviso} />
                     {!p.conectado && <SinConexion />}
@@ -385,7 +400,7 @@ export default function Consola() {
             {!enEscenario && miembro && (
               <div className="flex w-52 flex-col gap-1.5" data-testid="mi-vineta-backstage">
                 <Mosaico nombre={miembro.nombre} esYo flujo={vistaPrevia} pista={miCamara} espejo className="aspect-video rounded-xl">
-                  <div className="pointer-events-none absolute inset-0 bg-white/55" aria-hidden="true" />
+                  <Velo />
                   <ClicParaMover data-testid="volver-escenario" texto="Clic para volver al escenario" onClick={alternarEscenario} />
                 </Mosaico>
                 <p className="text-[12px] text-tenue">Tú: haz clic en tu viñeta para volver al escenario.</p>

@@ -17,6 +17,8 @@ const esquema = z.object({
   // Correos del equipo que pueden entrar, separados por coma, espacio o salto de línea.
   EQUIPO_PERMITIDO: z.string().default(''),
   HUB_API_KEY: z.string().default(''),
+  // Cuánto espera el servidor a que vuelva alguien que se desconectó antes de regresarlo al lobby (las redes flojas se reconectan solas).
+  GRACIA_DESCONEXION_SEGUNDOS: z.coerce.number().min(1).default(30),
   NODE_ENV: z.string().default('development'),
 });
 
