@@ -137,8 +137,12 @@ async function main() {
       p.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warn') console.log(`  [${nombre}] ${m.type()}: ${m.text().slice(0, 200)}`); });
       await p.goto(`${WEB}/p/${creada.codigo}`);
       await p.waitForSelector('[data-testid="acepto-aviso"]');
-      await p.click('[data-testid="acepto-aviso"]');
-      await p.waitForFunction(`!document.querySelector('[data-testid="aceptar-aviso"]')?.disabled`);
+      for (let intento = 0; intento < 8; intento++) { // el clic puede caer mientras la pantalla todavía se acomoda: se repite hasta que quede marcada
+        await p.click('[data-testid="acepto-aviso"]');
+        if (await p.$eval('[data-testid="acepto-aviso"]', (el) => (el as HTMLInputElement).checked)) break;
+        await dormir(250);
+      }
+      await p.waitForFunction(`!document.querySelector('[data-testid="aceptar-aviso"]')?.disabled`, { polling: 50, timeout: 10000 });
       await p.click('[data-testid="aceptar-aviso"]');
       await p.waitForSelector('[data-testid="nombre"]');
       await p.type('[data-testid="nombre"]', nombre);
@@ -299,6 +303,42 @@ async function main() {
       const coincide = enConsola === ultimo && enSuPantalla === ultimo && otrosLoVen.every((v) => v === (ultimo === 'escenario'));
       anotar('Ráfaga de 40 cambios: todas las pantallas terminan igual que el último pedido', coincide, `pedido=${ultimo} consola=${enConsola} suPantalla=${enSuPantalla} otrosLoVen=${otrosLoVen.join('/')}`);
       if (ultimo === 'escenario') { await clic(consola, `bajar-${a}`); await esperar(paginas[a], JS.lugar('backstage')); }
+    }
+
+    // ── La moderadora se va a backstage: su viñeta debe seguir viéndose (antes salía gris, con una pista silenciada) ──
+    {
+      await clic(consola, 'ir-backstage');
+      await esperar(consola, JS.hay('[data-testid="mi-vineta-backstage"]'));
+      let ve = false;
+      try {
+        await consola.waitForFunction(`(() => { const v = document.querySelector('[data-testid="mi-vineta-backstage"] video'); const t = v && v.srcObject && v.srcObject.getVideoTracks()[0]; return !!v && !!t && t.readyState === 'live' && !t.muted && v.videoWidth > 0 && v.readyState >= 2 && !v.paused; })()`, { timeout: 6000, polling: 100 });
+        ve = true;
+      } catch { /* se anota abajo */ }
+      anotar('La moderadora en backstage se sigue viendo (no sale gris)', ve);
+      await clic(consola, 'volver-escenario');
+      await esperar(consola, JS.enSeccion('lista-escenario', 'Marina'));
+      anotar('Un clic en su viñeta la regresa al escenario', true);
+    }
+
+    // ── El equipo silencia el micrófono de un participante ──
+    {
+      const micActivo = () => paginas[a].evaluate(() => !!(window as unknown as { __sala?: { localParticipant: { isMicrophoneEnabled: boolean } } }).__sala?.localParticipant.isMicrophoneEnabled);
+      anotar(`${a} empieza con el micrófono encendido`, await micActivo());
+      await clic(consola, `silenciar-${a}`);
+      await esperar(paginas[a], JS.hay('[data-testid="aviso-silenciado"]'));
+      await dormir(800);
+      anotar(`Silenciar a ${a}: su micrófono se apaga y su pantalla lo explica`, !(await micActivo()) && (await paginas[a].$eval('[data-testid="boton-mic"]', (el) => (el as HTMLButtonElement).disabled)));
+      await paginas[a].evaluate(`(async () => { try { await window.__sala.localParticipant.setMicrophoneEnabled(true); } catch (e) {} })()`);
+      await dormir(1500);
+      anotar(`${a} no puede volver a encender el micrófono por su cuenta`, !(await micActivo()));
+      await clic(consola, `silenciar-${a}`);
+      await esperar(paginas[a], JS.noHay('[data-testid="aviso-silenciado"]'));
+      await dormir(600);
+      anotar(`Al permitirle hablar, el micrófono NO se enciende solo`, !(await micActivo()));
+      await clic(paginas[a], 'boton-mic');
+      let vuelve = false;
+      for (let i = 0; i < 30 && !vuelve; i++) { await dormir(100); vuelve = await micActivo(); }
+      anotar(`${a} decide encender su micrófono y funciona`, vuelve);
     }
 
     // ── Regresar al lobby ──

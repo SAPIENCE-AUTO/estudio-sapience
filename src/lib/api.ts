@@ -41,6 +41,7 @@ export const api = {
   crearSesion: (nombre: string) => pedir<ResumenSesion>('/v1/sesiones', { equipo: true, cuerpo: { nombre } }),
   accion: (sid: string, pid: string, accion: 'llamar' | 'pasar' | 'lobby' | 'subir' | 'bajar') =>
     pedir<RespuestaAccion>(`/sesiones/${sid}/participantes/${pid}/${accion}`, { equipo: true }),
+  silenciar: (sid: string, pid: string, silenciado: boolean) => pedir<RespuestaAccion>(`/sesiones/${sid}/participantes/${pid}/silenciar`, { equipo: true, cuerpo: { silenciado } }),
   yo: () => pedir<{ email: string; nombre: string }>('/equipo/yo', { equipo: true, metodo: 'GET' }),
   boletoEquipo: (sid: string) => pedir<{ boleto: string }>(`/sesiones/${sid}/equipo/boleto`, { equipo: true }),
   tokenEquipo: (sid: string) => pedir<RespuestaTokenEquipo>(`/sesiones/${sid}/equipo/token`, { equipo: true }),

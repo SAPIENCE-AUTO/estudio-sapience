@@ -9,7 +9,7 @@ export function estadoParaEquipo(s: Sesion, yo: string): EstadoEquipo {
     sesion: { id: s.id, nombre: s.nombre, codigo: s.codigo, terminada: s.terminada },
     participantes: Object.values(s.participantes)
       .sort((a, b) => a.entroEn - b.entroEn)
-      .map((p) => ({ id: p.id, nombre: p.nombre, lugar: p.lugar, verdeCon: p.verdeCon, conectado: p.conectado, entroEn: p.entroEn })),
+      .map((p) => ({ id: p.id, nombre: p.nombre, lugar: p.lugar, verdeCon: p.verdeCon, conectado: p.conectado, entroEn: p.entroEn, silenciado: !!p.silenciado })),
     equipo: Object.values(s.equipo).map((m) => ({ id: m.id, nombre: m.nombre, enEscenario: m.enEscenario, conectado: m.conectado })),
   };
 }
@@ -20,7 +20,7 @@ export function estadoParaParticipante(s: Sesion, pid: string): EstadoParticipan
   return {
     tipo: 'estado', rol: 'participante', v: s.version,
     sesion: { nombre: s.nombre, terminada: s.terminada },
-    yo: { id: p.id, nombre: p.nombre, lugar: p.lugar, verdeCon: p.verdeCon },
+    yo: { id: p.id, nombre: p.nombre, lugar: p.lugar, verdeCon: p.verdeCon, silenciado: !!p.silenciado },
     equipo: Object.values(s.equipo).map((m) => ({ id: m.id, nombre: m.nombre, enEscenario: m.enEscenario })),
     escenario: Object.values(s.participantes).filter((q) => q.lugar === 'escenario').map((q) => ({ id: q.id, nombre: q.nombre })),
   };

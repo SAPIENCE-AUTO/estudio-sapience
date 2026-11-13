@@ -16,11 +16,13 @@ export async function asegurarSala(nombre: string): Promise<void> {
  * backstage y escenario puede publicar cámara y micrófono y recibir. Sin nombre: en LiveKit solo hay un código al azar,
  * el nombre que escribió vive en el servidor.
  */
-export async function tokenParticipante(sala: string, participanteId: string, p: { publicar: boolean; recibir: boolean }): Promise<string> {
+const fuentes = (microfono: boolean | undefined) => (microfono === false ? [TrackSource.CAMERA] : [TrackSource.CAMERA, TrackSource.MICROPHONE]);
+
+export async function tokenParticipante(sala: string, participanteId: string, p: { publicar: boolean; recibir: boolean; microfono?: boolean }): Promise<string> {
   const at = new AccessToken(config.LIVEKIT_API_KEY, config.LIVEKIT_API_SECRET, { identity: participanteId, ttl: 6 * 3600 });
   at.addGrant({
     roomJoin: true, room: sala, canPublish: p.publicar, canSubscribe: p.recibir, canPublishData: false, canUpdateOwnMetadata: false,
-    ...(p.publicar ? { canPublishSources: [TrackSource.CAMERA, TrackSource.MICROPHONE] } : {}),
+    ...(p.publicar ? { canPublishSources: fuentes(p.microfono) } : {}),
   });
   return at.toJwt();
 }
@@ -34,14 +36,14 @@ export async function tokenEquipo(sala: string, equipoId: string, nombre: string
 export class PersonaDesconectada extends Error {}
 
 /** Qué puede hacer una persona dentro de la sala. En el lobby no publica ni recibe. */
-export async function permisos(sala: string, participanteId: string, p: { publicar: boolean; recibir: boolean }): Promise<void> {
+export async function permisos(sala: string, participanteId: string, p: { publicar: boolean; recibir: boolean; microfono?: boolean }): Promise<void> {
   try {
     await salas.updateParticipant(sala, participanteId, {
       permission: {
         canPublish: p.publicar,
         canSubscribe: p.recibir,
         canPublishData: false,
-        canPublishSources: p.publicar ? [TrackSource.CAMERA, TrackSource.MICROPHONE] : [],
+        canPublishSources: p.publicar ? fuentes(p.microfono) : [],
         canUpdateMetadata: false,
       },
     });

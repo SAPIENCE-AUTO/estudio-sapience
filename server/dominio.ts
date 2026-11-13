@@ -18,6 +18,8 @@ export interface Participante {
   entroEn: number;
   /** Cuándo aceptó el aviso de privacidad (entrar exige aceptarlo). Ausente en sesiones guardadas antes de que existiera. */
   avisoEn?: number;
+  /** El equipo le quitó el micrófono (en LiveKit se le retira el permiso de publicar audio). */
+  silenciado?: boolean;
 }
 
 export interface Miembro {
@@ -124,6 +126,16 @@ export function regresarALobby(s: Sesion, pid: string): { cambio: boolean; de: L
   p.lugar = 'lobby'; p.verdeCon = null;
   sube(s);
   return { cambio: true, de };
+}
+
+/** Quitar o permitir el micrófono de un participante. Permitirlo NO lo enciende: la persona decide cuándo hablar. */
+export function silenciar(s: Sesion, pid: string, silenciado: boolean): { cambio: boolean } {
+  viva(s);
+  const p = participante(s, pid);
+  if (!!p.silenciado === silenciado) return { cambio: false };
+  p.silenciado = silenciado;
+  sube(s);
+  return { cambio: true };
 }
 
 export function subir(s: Sesion, pid: string): { cambio: boolean; de: Lugar } {

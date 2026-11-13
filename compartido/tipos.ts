@@ -11,6 +11,8 @@ export interface ParticipantePublico {
   verdeCon: string | null;
   conectado: boolean;
   entroEn: number;
+  /** El equipo le quitó el micrófono: no puede hablar hasta que se lo permitan. */
+  silenciado: boolean;
 }
 
 export interface MiembroPublico {
@@ -38,7 +40,7 @@ export interface EstadoParticipante {
   rol: 'participante';
   v: number;
   sesion: { nombre: string; terminada: boolean };
-  yo: { id: string; nombre: string; lugar: Lugar; verdeCon: string | null };
+  yo: { id: string; nombre: string; lugar: Lugar; verdeCon: string | null; silenciado: boolean };
   equipo: { id: string; nombre: string; enEscenario: boolean }[];
   escenario: { id: string; nombre: string }[];
 }

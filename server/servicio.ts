@@ -69,7 +69,7 @@ async function livekitDe(s: d.Sesion, p: d.Participante): Promise<RespuestaEntra
   const sala = salaSesion(s.id);
   await lk.asegurarSala(sala);
   const activo = p.lugar !== 'lobby';
-  return { url: lk.urlLivekit, sala, token: await lk.tokenParticipante(sala, p.id, { publicar: activo, recibir: activo }) };
+  return { url: lk.urlLivekit, sala, token: await lk.tokenParticipante(sala, p.id, { publicar: activo, recibir: activo, microfono: !p.silenciado }) };
 }
 
 export async function livekitDeParticipante(sid: string, pid: string): Promise<RespuestaEntrar['livekit']> {
@@ -84,7 +84,7 @@ type Cambio = { cambio: boolean; de: import('../compartido/tipos').Lugar };
 
 /** Nadie cambia de sala: solo se enciende o se apaga lo que la persona puede publicar y recibir (el lobby no publica ni recibe). */
 async function permisosPorLugar(s: d.Sesion, pid: string, destino: 'lobby' | 'activo'): Promise<void> {
-  await lk.permisos(salaSesion(s.id), pid, destino === 'lobby' ? { publicar: false, recibir: false } : { publicar: true, recibir: true });
+  await lk.permisos(salaSesion(s.id), pid, destino === 'lobby' ? { publicar: false, recibir: false } : { publicar: true, recibir: true, microfono: !s.participantes[pid]?.silenciado });
 }
 
 const respuesta = (s: d.Sesion): RespuestaAccion => ({ v: s.version });
@@ -108,6 +108,19 @@ export function regresarALobby(sid: string, pid: string): Promise<RespuestaAccio
   return transaccion(sid, async (s) => {
     const r: Cambio = d.regresarALobby(s, pid);
     if (r.cambio) await permisosPorLugar(s, pid, 'lobby');
+    return respuesta(s);
+  });
+}
+
+/** El equipo quita o permite el micrófono de un participante. Si no está conectado, queda guardado y vale al volver a entrar. */
+export function silenciar(sid: string, pid: string, silenciado: boolean): Promise<RespuestaAccion> {
+  return transaccion(sid, async (s) => {
+    const r = d.silenciar(s, pid, silenciado);
+    const p = s.participantes[pid]!;
+    if (r.cambio && p.lugar !== 'lobby') {
+      try { await lk.permisos(salaSesion(s.id), pid, { publicar: true, recibir: true, microfono: !silenciado }); }
+      catch (e) { if (!(e instanceof lk.PersonaDesconectada)) throw e; }
+    }
     return respuesta(s);
   });
 }

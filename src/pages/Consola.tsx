@@ -67,6 +67,27 @@ function BotonRedondo({ activo, apagado, etiqueta, onClick, children, ...resto }
   );
 }
 
+/** Cubre la viñeta: un clic la mueve (subir, bajar, ir a backstage). Al pasar el mouse dice qué va a pasar. */
+function ClicParaMover({ texto, onClick, ...resto }: { texto: string; onClick: () => void; 'data-testid'?: string }) {
+  return (
+    <button {...resto} onClick={onClick} aria-label={texto} className="group absolute inset-0 z-[1] flex items-center justify-center bg-teal/0 transition-colors hover:bg-teal/45 focus-visible:bg-teal/45">
+      <span className="rounded-lg bg-teal px-3 py-1.5 text-[12px] font-semibold text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">{texto}</span>
+    </button>
+  );
+}
+
+/** Quitar o permitir el micrófono de un participante. Permitirlo no lo enciende: él decide cuándo hablar. */
+function BotonMicrofono({ p, sid, onError }: { p: ParticipantePublico; sid: string; onError: (m: string) => void }) {
+  const titulo = p.silenciado ? `Permitir que ${p.nombre} hable` : `Silenciar a ${p.nombre}`;
+  return (
+    <button data-testid={`silenciar-${p.nombre}`} aria-label={titulo} title={titulo}
+      onClick={() => void api.silenciar(sid, p.id, !p.silenciado).catch(() => onError('No se pudo cambiar el micrófono'))}
+      className={`absolute left-2 top-2 z-[2] inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] font-semibold ${p.silenciado ? 'bg-peligro text-white' : 'bg-white text-teal'}`}>
+      {p.silenciado ? <><MicOff size={12} aria-hidden="true" />Sin micrófono</> : <Mic size={12} aria-hidden="true" />}
+    </button>
+  );
+}
+
 function PanelVerde({ p, room, yo, ejecutar }: { p: ParticipantePublico; room: Room | undefined; yo: string; ejecutar: (a: Accion, pid: string) => void }) {
   useCambiosDeSala(room ?? null);
   return (
@@ -132,23 +153,22 @@ export default function Consola() {
   const enPantalla = participantes.filter((p) => p.lugar === 'escenario');
   const nombreEquipo = (id: string | null) => estado.equipo.find((m) => m.id === id)?.nombre ?? 'el equipo';
 
-  const miCamara = salaSesion?.localParticipant.getTrackPublication(Track.Source.Camera)?.track ?? null;
+  // Una pista propia SILENCIADA (la cámara se apagó al salir del escenario) sigue existiendo pero solo da cuadros negros: no se dibuja.
+  const pubCamara = salaSesion?.localParticipant.getTrackPublication(Track.Source.Camera);
+  const miCamara = pubCamara && !pubCamara.isMuted ? pubCamara.track ?? null : null;
   const alternarEscenario = () => void api.miembroEnEscenario(sid, !enEscenario).catch(() => setAviso('No se pudo cambiar'));
 
   // Quién va en el escenario: el equipo y los participantes que subieron. El acomodo cambia solo según cuántos son.
   const enEscena = [
     ...estado.equipo.filter((m) => m.enEscenario).map((m) => (
       <Mosaico key={m.id} nombre={m.nombre} esYo={m.id === yo} pista={m.id === yo ? miCamara : camaraDe(salaSesion, m.id)} espejo={m.id === yo} className="h-full w-full">
-        {m.id === yo && (
-          <button data-testid="ir-backstage" onClick={alternarEscenario} className="absolute right-2 top-2 inline-flex h-7 items-center gap-1 rounded-md bg-teal px-2.5 text-[11px] font-semibold text-white">
-            <ArrowRightLeft size={12} aria-hidden="true" />Ir a backstage
-          </button>
-        )}
+        {m.id === yo && <ClicParaMover data-testid="ir-backstage" texto="Clic para ir a backstage" onClick={alternarEscenario} />}
       </Mosaico>
     )),
     ...enPantalla.map((p) => (
       <Mosaico key={p.id} nombre={p.nombre} pista={camaraDe(salaSesion, p.id)} className="h-full w-full">
-        <button data-testid={`bajar-${p.nombre}`} onClick={() => ejecutar('bajar', p.id)} className="absolute right-2 top-2 h-7 rounded-md bg-teal px-2.5 text-[11px] font-semibold text-white">Bajar</button>
+        <ClicParaMover data-testid={`bajar-${p.nombre}`} texto="Clic para bajar a backstage" onClick={() => ejecutar('bajar', p.id)} />
+        <BotonMicrofono p={p} sid={sid} onError={setAviso} />
       </Mosaico>
     )),
   ];
@@ -220,20 +240,24 @@ export default function Consola() {
               {enBackstage.map((p) => (
                 <div key={p.id} className="flex w-52 flex-col gap-1.5" data-testid={`tarjeta-backstage-${p.nombre}`}>
                   <Mosaico nombre={p.nombre} pista={camaraDe(salaSesion, p.id)} className="aspect-video rounded-xl">
-                    {!p.conectado && <span className="absolute right-2 top-2 rounded-md bg-peligro-fondo px-1.5 py-0.5 text-[10px] font-semibold text-peligro"><MicOff size={10} className="mr-1 inline" />Sin conexión</span>}
+                    <ClicParaMover data-testid={`subir-${p.nombre}`} texto="Clic para subir al escenario" onClick={() => ejecutar('subir', p.id)} />
+                    <BotonMicrofono p={p} sid={sid} onError={setAviso} />
+                    {!p.conectado && <span className="absolute right-2 top-2 z-[2] rounded-md bg-peligro-fondo px-1.5 py-0.5 text-[10px] font-semibold text-peligro"><MicOff size={10} className="mr-1 inline" />Sin conexión</span>}
                   </Mosaico>
                   <div className="flex gap-1.5">
-                    <Boton principal data-testid={`subir-${p.nombre}`} className="flex-1" onClick={() => ejecutar('subir', p.id)}>Subir</Boton>
-                    <Boton data-testid={`verde-${p.nombre}`} onClick={() => ejecutar('llamar', p.id)} title="Regresar a la sala verde">Verde</Boton>
-                    <Boton data-testid={`lobby-${p.nombre}`} onClick={() => ejecutar('lobby', p.id)} title="Regresar al lobby">Lobby</Boton>
+                    <Boton data-testid={`verde-${p.nombre}`} className="flex-1" onClick={() => ejecutar('llamar', p.id)} title="Regresar a la sala verde">Sala verde</Boton>
+                    <Boton data-testid={`lobby-${p.nombre}`} className="flex-1" onClick={() => ejecutar('lobby', p.id)} title="Regresar al lobby">Lobby</Boton>
                   </div>
                 </div>
               ))}
             </div>
             {!enEscenario && miembro && (
               <div className="flex w-52 flex-col gap-1.5" data-testid="mi-vineta-backstage">
-                <Mosaico nombre={miembro.nombre} esYo flujo={vistaPrevia} pista={miCamara} espejo className="aspect-video rounded-xl opacity-50" />
-                <Boton principal data-testid="volver-escenario" onClick={alternarEscenario}>Volver al escenario</Boton>
+                <Mosaico nombre={miembro.nombre} esYo flujo={vistaPrevia} pista={miCamara} espejo className="aspect-video rounded-xl">
+                  <div className="pointer-events-none absolute inset-0 bg-white/55" aria-hidden="true" />
+                  <ClicParaMover data-testid="volver-escenario" texto="Clic para volver al escenario" onClick={alternarEscenario} />
+                </Mosaico>
+                <p className="text-[12px] text-tenue">Tú: haz clic en tu viñeta para volver al escenario.</p>
               </div>
             )}
           </div>

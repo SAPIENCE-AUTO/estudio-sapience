@@ -61,6 +61,11 @@ export function crearRutas(): express.Router {
     })));
   }));
 
+  r.post('/sesiones/:sid/participantes/:pid/silenciar', exigirEquipo, ruta(async (req, res) => {
+    const { silenciado } = z.object({ silenciado: z.boolean() }).parse(req.body);
+    res.json(await servicio.silenciar(req.params.sid as string, req.params.pid as string, silenciado));
+  }));
+
   const acciones = {
     llamar: (sid: string, pid: string, eq: string) => servicio.llamar(sid, pid, eq),
     pasar: (sid: string, pid: string) => servicio.pasarASesion(sid, pid),

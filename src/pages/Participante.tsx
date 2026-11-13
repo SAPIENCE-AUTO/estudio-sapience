@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { ConnectionState, Room, RoomEvent, Track, VideoPresets, type RemoteAudioTrack } from 'livekit-client';
 import { Mic, MicOff, Video as IconoVideo, VideoOff } from 'lucide-react';
@@ -225,6 +225,13 @@ function Dentro({ entrada, camId, micId }: { entrada: RespuestaEntrar; camId?: s
   const equipoIds = useMemo(() => (estado?.equipo ?? []).map((m) => m.id).sort().join(','), [estado?.equipo]);
   const verdeCon = estado?.yo.verdeCon ?? null;
   const conectadoLK = room?.state === ConnectionState.Connected;
+  // Si el equipo le quitó el micrófono, no se enciende solo al cambiar de lugar y el botón queda apagado. Al permitirlo, NO se enciende solo: decide la persona.
+  const silenciado = !!estado?.yo.silenciado;
+  const silenciadoRef = useRef(false);
+  silenciadoRef.current = silenciado;
+  useEffect(() => {
+    if (room && conectadoLK && silenciado) void room.localParticipant.setMicrophoneEnabled(false).catch(() => undefined);
+  }, [room, conectadoLK, silenciado]);
 
   // La pantalla sigue SIEMPRE al estado del servidor: según el lugar se enciende o se apaga lo que publico y quién puede recibirlo.
   useEffect(() => {
@@ -238,7 +245,7 @@ function Dentro({ entrada, camId, micId }: { entrada: RespuestaEntrar; camId?: s
       }
       proteger(room, permitidosDeParticipante(lugar, equipoIds ? equipoIds.split(',') : [], verdeCon));
       if (!(await esperarPermisoDePublicar(room)) || cancelado) return;
-      await room.localParticipant.setMicrophoneEnabled(true).catch(() => undefined);
+      if (!silenciadoRef.current) await room.localParticipant.setMicrophoneEnabled(true).catch(() => undefined);
       await room.localParticipant.setCameraEnabled(true).catch(() => undefined);
     })();
     return () => { cancelado = true; };
@@ -311,6 +318,7 @@ function Dentro({ entrada, camId, micId }: { entrada: RespuestaEntrar; camId?: s
           <div className="flex flex-col gap-1 px-5">
             <h1 className="text-lg font-semibold">{yo.lugar === 'escenario' ? 'Estás en pantalla' : 'Estás en espera'}</h1>
             <p className="text-[13px] leading-5 text-tenue">{yo.lugar === 'escenario' ? 'Te ven y te escuchan.' : 'Escuchas la sesión. Todavía no te ven ni te oyen.'}</p>
+            {silenciado && <p data-testid="aviso-silenciado" className="mt-1 inline-flex items-center gap-1.5 rounded-lg bg-peligro-fondo px-2.5 py-1.5 text-[13px] font-medium text-peligro"><MicOff size={14} aria-hidden="true" />El equipo silenció tu micrófono. Te avisarán cuando puedas hablar.</p>}
           </div>
           {yo.lugar === 'backstage' && (
             <div className="flex items-center gap-3 px-5">
@@ -323,7 +331,7 @@ function Dentro({ entrada, camId, micId }: { entrada: RespuestaEntrar; camId?: s
 
       {yo.lugar !== 'lobby' && (
         <div className="mx-5 mb-5 mt-auto flex justify-center gap-6 rounded-3xl border border-borde bg-tarjeta px-4 py-3">
-          <button aria-label={micEncendido ? 'Silenciar micrófono' : 'Activar micrófono'} data-testid="boton-mic"
+          <button aria-label={silenciado ? 'El equipo silenció tu micrófono' : micEncendido ? 'Silenciar micrófono' : 'Activar micrófono'} data-testid="boton-mic" disabled={silenciado}
             onClick={() => void room?.localParticipant.setMicrophoneEnabled(!micEncendido)}
             className={`flex h-[52px] w-[52px] items-center justify-center rounded-full ${micEncendido ? 'bg-ok-fondo text-ok' : 'bg-peligro-fondo text-peligro'}`}>
             {micEncendido ? <Mic size={22} /> : <MicOff size={22} />}
