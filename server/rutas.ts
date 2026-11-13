@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { config } from './config';
 import { ErrorDominio, idMiembro } from './dominio';
 import { PersonaDesconectada } from './livekit';
-import { equipoDesdeSolicitud, ErrorAcceso, esLlaveDelHub, firmarBoleto, pasePorEncabezado, type DatosPase, type UsuarioEquipo } from './auth';
+import { equipoDesdeSolicitud, ErrorAcceso, esLlaveDelHub, firmarBoleto, leerGrabadora, pasePorEncabezado, type DatosPase, type UsuarioEquipo } from './auth';
 import * as servicio from './servicio';
 import type { Sesion } from './dominio';
 import { AJUSTES_DISENO, FONDOS_DISENO, FORMAS_DISENO, TIPOS_DISENO } from '../compartido/tipos';
@@ -122,6 +122,18 @@ export function crearRutas(): express.Router {
   r.post('/sesiones/:sid/equipo/escenario', exigirEquipo, ruta(async (req: ConEquipo, res) => {
     const { enEscenario } = z.object({ enEscenario: z.boolean() }).parse(req.body);
     res.json(await servicio.ponerEnEscenario(req.params.sid as string, idMiembro(req.equipo!.email), enEscenario));
+  }));
+
+  // EN VIVO: empezar y terminar la transmisión a la sala de observación (Mux).
+  r.post('/sesiones/:sid/envivo/iniciar', exigirEquipo, ruta(async (req, res) => { res.json(await servicio.iniciarEnVivo(req.params.sid as string)); }));
+  r.post('/sesiones/:sid/envivo/detener', exigirEquipo, ruta(async (req, res) => { res.json(await servicio.detenerEnVivo(req.params.sid as string)); }));
+  // Vista previa de lo que sale al aire: la misma página que transmite LiveKit, para abrirla en otra pestaña.
+  r.post('/sesiones/:sid/grabadora/vista-previa', exigirEquipo, ruta(async (req, res) => { res.json({ direccion: servicio.direccionDeVistaPrevia(req.params.sid as string) }); }));
+  // La página que se transmite pide aquí su pase de LiveKit, con el boleto de la grabadora.
+  r.post('/grabadora/livekit', ruta(async (req, res) => {
+    const g = leerGrabadora((req.headers.authorization ?? '').replace(/^Bearer /, ''));
+    if (!g) throw new ErrorDominio('NO_PERMITIDO', 'El boleto de la transmisión venció o no es válido');
+    res.json(await servicio.livekitDeGrabadora(g.sid));
   }));
 
   r.post('/sesiones/:sid/chat/config', exigirEquipo, ruta(async (req, res) => {

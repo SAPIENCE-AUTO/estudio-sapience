@@ -7,7 +7,7 @@ import * as d from './dominio';
 import { almacenArchivo, almacenPostgres, type Almacen } from './almacen';
 import { avisoDeDireccion, crearPool, explicarFalloDeConexion } from './baseDeDatos';
 import { difundir } from './difusion';
-import { firmarPase } from './auth';
+import { firmarGrabadora, firmarPase } from './auth';
 import * as lk from './livekit';
 import { config } from './config';
 
@@ -131,6 +131,62 @@ export function mensajeDeParticipante(sid: string, pid: string, texto: string): 
   return transaccion(sid, async (s) => { d.mensajeDeParticipante(s, pid, texto); return respuesta(s); });
 }
 
+// ---------- EN VIVO ----------
+const iniciando = new Set<string>();
+
+/**
+ * Empieza a transmitir el escenario a la sala de observación (Mux). LiveKit abre una página de Talks que dibuja el escenario con el diseño
+ * elegido, y de ahí lo manda por RTMPS. Mux, de paso, lo guarda como grabación. Esperar a que arranque toma unos segundos: no se hace
+ * dentro de la fila de la sesión, para no frenar los demás cambios (mover gente, chats) mientras tanto.
+ */
+export async function iniciarEnVivo(sid: string): Promise<RespuestaAccion> {
+  const s0 = obtener(sid);
+  if (s0.terminada) throw new d.ErrorDominio('SESION_TERMINADA', 'La sesión ya terminó');
+  if (s0.envivo) throw new d.ErrorDominio('NO_PERMITIDO', 'La sesión ya está en vivo');
+  const llave = s0.muxLlave;
+  if (!llave) throw new d.ErrorDominio('NO_PERMITIDO', 'Esta sesión no tiene llave de transmisión: el Hub la manda al crear la sesión');
+  if (iniciando.has(sid)) throw new d.ErrorDominio('NO_PERMITIDO', 'Ya se está empezando la transmisión, espera unos segundos');
+  iniciando.add(sid);
+  let egressId = '';
+  try {
+    await lk.asegurarSala(salaSesion(sid));
+    const pagina = `${config.URL_PUBLICA}/grabadora/${sid}?t=${firmarGrabadora(sid)}`;
+    egressId = await lk.empezarTransmision(pagina, `${config.MUX_RTMP_URL}/${llave}`);
+    await lk.esperarTransmision(egressId);
+    return await transaccion(sid, async (s) => { d.iniciarEnVivo(s, egressId); return respuesta(s); });
+  } catch (e) {
+    if (egressId) await lk.detenerTransmision(egressId);
+    if (e instanceof d.ErrorDominio) throw e;
+    // El mensaje de LiveKit puede traer la dirección de transmisión (con la llave): se limpia antes de mostrarlo.
+    const motivo = lk.sinLlave(e instanceof Error ? e.message : String(e), llave);
+    console.error('No se pudo empezar el EN VIVO:', motivo);
+    throw new d.ErrorDominio('NO_PERMITIDO', 'No se pudo empezar la transmisión. Revisa que la llave de la sala de observación sea la correcta y que la dirección pública de Talks sea alcanzable desde internet.');
+  } finally { iniciando.delete(sid); }
+}
+
+export function detenerEnVivo(sid: string): Promise<RespuestaAccion> {
+  return transaccion(sid, async (s) => {
+    const id = d.detenerEnVivo(s);
+    if (id) await lk.detenerTransmision(id);
+    return respuesta(s);
+  });
+}
+
+/** Boleto para abrir la página de la transmisión como VISTA PREVIA («así sale al aire»). */
+export function direccionDeVistaPrevia(sid: string): string {
+  obtener(sid);
+  return `/grabadora/${sid}?t=${firmarGrabadora(sid)}`;
+}
+
+/** Pase de LiveKit de la página que se transmite (oculta, solo mira y escucha). */
+export async function livekitDeGrabadora(sid: string): Promise<RespuestaEntrar['livekit']> {
+  const s = obtener(sid);
+  if (s.terminada) throw new d.ErrorDominio('SESION_TERMINADA', 'La sesión ya terminó');
+  const sala = salaSesion(sid);
+  await lk.asegurarSala(sala);
+  return { url: lk.urlLivekit, sala, token: await lk.tokenGrabadora(sala) };
+}
+
 export function ponerChat(sid: string, cfg: ConfigChat): Promise<RespuestaAccion> {
   return transaccion(sid, async (s) => { d.ponerChat(s, cfg); return respuesta(s); });
 }
@@ -232,6 +288,12 @@ export async function iniciar(elegido?: Almacen): Promise<void> {
     if (s.terminada) continue;
     for (const p of Object.values(s.participantes)) if (p.lugar !== 'lobby' && !p.conectado) vigilarAusencia(s.id, p.id);
   }
+  // Si el servidor se reinició con una transmisión al aire, LiveKit sigue con ella: se comprueba que exista todavía.
+  for (const s of Object.values(sesiones)) {
+    if (!s.envivo || s.terminada) continue;
+    const sigue = await lk.transmisionActiva(s.envivo.egressId).catch(() => true); // si no se puede comprobar, se deja como estaba
+    if (!sigue) { delete s.envivo; s.version += 1; guardarPronto(sesiones); }
+  }
   console.log(`Talks: ${Object.keys(sesiones).length} sesiones cargadas (${config.DATABASE_URL && !elegido ? 'Postgres' : 'archivo local'})`);
 }
 
@@ -243,6 +305,8 @@ export async function cerrar(): Promise<void> {
 
 export function terminar(sid: string): Promise<RespuestaAccion> {
   return transaccion(sid, async (s) => {
+    const enVivo = d.detenerEnVivo(s); // si estaba al aire, se para antes de borrar la sala
+    if (enVivo) await lk.detenerTransmision(enVivo);
     d.terminar(s);
     await lk.borrarSala(salaSesion(sid));
     return respuesta(s);

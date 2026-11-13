@@ -609,6 +609,66 @@ async function main() {
       anotar('Al volver a Moderación regresan el lobby, la sala verde y las acciones sobre la gente', (await hay('[data-testid="lista-lobby"]')) && (await hay('[data-testid="lista-verde"]')) && (await hay('[data-testid^="subir-"]')) && (await hay('[data-testid^="lobby-"]')));
     }
 
+    // ── EN VIVO: la página que se transmite (lo que LiveKit mandaría a Mux) solo muestra y escucha a quienes están en el escenario ──
+    {
+      // Sin llave de Mux no se puede empezar, y el aviso lo explica (esta sesión de prueba no tiene llave).
+      await clic(consola, 'boton-envivo');
+      await esperar(consola, JS.hay('[data-testid="aviso"]'));
+      const avisoVivo = await consola.evaluate(() => document.querySelector('[data-testid="aviso"]')?.textContent ?? '');
+      anotar('Sin llave de Mux el botón EN VIVO explica que falta', avisoVivo.includes('llave de transmisión'), avisoVivo);
+      await consola.evaluate(() => (document.querySelector('[data-testid="aviso"]') as HTMLElement | null)?.click());
+
+      await promover(a);
+      await dormir(600);
+      const API = 'http://localhost:8787/api';
+      const cab = { 'content-type': 'application/json', 'x-equipo-email': EQUIPO.email, 'x-equipo-nombre': EQUIPO.nombre };
+      const previa = await (await fetch(`${API}/sesiones/${creada.id}/grabadora/vista-previa`, { method: 'POST', headers: cab })).json() as { direccion: string };
+      anotar('La vista previa entrega la dirección de la página que se transmite', previa.direccion.startsWith(`/grabadora/${creada.id}?t=`));
+      const sinBoleto = await fetch(`${API}/grabadora/livekit`, { method: 'POST', headers: { authorization: 'Bearer boleto-inventado' } });
+      anotar('Sin un boleto válido nadie obtiene el pase de la grabadora', sinBoleto.status >= 400 && sinBoleto.status < 500, `estado ${sinBoleto.status}`);
+
+      const gra = await nuevaPantalla();
+      await gra.setViewport({ width: 1920, height: 1080 });
+      await gra.evaluateOnNewDocument('window.__TRAZA = true;'); // deja la sala a la vista de la prueba
+      let senal = false;
+      gra.on('console', (m) => { if (m.text() === 'START_RECORDING') senal = true; });
+      await gra.goto(`${WEB}${previa.direccion}`);
+      await esperar(gra, JS.hay('[data-testid="grabadora"] [data-testid="mosaico-Ana"] video'), null, 20000);
+      anotar('La página que se transmite dibuja a quien está en el escenario', true);
+      for (let i = 0; i < 100 && !senal; i++) await dormir(100);
+      anotar('La página avisa «START_RECORDING» cuando ya conectó (LiveKit espera esa señal para empezar)', senal);
+      const sesionOculta = await gra.evaluate(() => { const r = (window as unknown as { __sala?: { remoteParticipants: Map<string, unknown>; localParticipant: { permissions?: { hidden?: boolean; canPublish?: boolean } } } }).__sala; return r ? { hidden: !!r.localParticipant.permissions?.hidden, publica: !!r.localParticipant.permissions?.canPublish } : null; });
+      anotar('La grabadora entra oculta y sin poder publicar', !!sesionOculta && sesionOculta.hidden && !sesionOculta.publica, JSON.stringify(sesionOculta));
+
+      // PRIVACIDAD: nadie que no esté en el escenario aparece ni se escucha.
+      const texto = await gra.evaluate(() => document.body.innerText);
+      const enPagina = await gra.evaluate((nombres: string[]) => nombres.filter((n) => !!document.querySelector(`[data-testid="mosaico-${n}"]`)), [b, c]);
+      anotar('La página NO muestra a quienes están en backstage', enPagina.length === 0 && !texto.includes(b) && !texto.includes(c), JSON.stringify(enPagina));
+      const audios = await gra.evaluate(() => document.querySelectorAll('audio').length);
+      const enEscenaAhora = await consola.evaluate(() => document.querySelectorAll('[data-testid="lista-escenario"] [data-testid^="mosaico-"]').length);
+      anotar('La página solo reproduce el sonido de quienes están en el escenario', audios <= enEscenaAhora, `${audios} sonidos, ${enEscenaAhora} en el escenario`);
+
+      // Lo que se emite sigue al escenario: sube Beto, aparece; baja, desaparece.
+      await promover(b);
+      await esperar(gra, JS.hay(`[data-testid="grabadora"] [data-testid="mosaico-${b}"]`), null, 10000);
+      anotar(`Si sube ${b} al escenario, aparece en lo que se transmite`, true);
+      await degradar(b);
+      await esperar(gra, JS.noHay(`[data-testid="grabadora"] [data-testid="mosaico-${b}"]`), null, 10000);
+      anotar(`Si baja ${b}, desaparece de lo que se transmite (y de su sonido)`, true);
+
+      // El diseño elegido en la consola es el que sale al aire.
+      await consola.evaluate(() => { const x = document.querySelector('[data-testid="boton-diseno"]') as HTMLElement | null; if (x && !document.querySelector('[data-testid="diseno-foco"]')) x.click(); });
+      await dormir(300);
+      await clic(consola, 'diseno-foco'); await clic(consola, 'forma-circulo'); await clic(consola, 'fondo-negro');
+      await esperar(gra, `document.querySelector('[data-testid="escena-grabadora"]')?.getAttribute('data-diseno') === 'foco' && document.querySelector('[data-testid="escena-grabadora"]')?.getAttribute('data-fondo') === 'negro'`, null, 10000);
+      anotar('El diseño, la forma y el fondo elegidos son los que se transmiten', true);
+      await foto(gra, '16-lo-que-sale-al-aire');
+      await clic(consola, 'diseno-auto'); await clic(consola, 'forma-redondeada'); await clic(consola, 'fondo-gris'); await dormir(500);
+      await consola.evaluate(() => (document.querySelector('[data-testid="cerrar-diseno"]') as HTMLElement | null)?.click());
+      await gra.close();
+      await degradar(a);
+    }
+
     // ── Regresar al lobby ──
     {
       const t0 = ahora();

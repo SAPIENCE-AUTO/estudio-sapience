@@ -1,7 +1,10 @@
 // Lo que cada quien puede ver de la sesión. El participante NUNCA recibe la lista completa:
 // solo lo suyo, el equipo y quién está en el escenario (porque eso lo ve todo el mundo de todos modos).
-import { normalizarChat, normalizarDiseno, type EstadoEquipo, type EstadoParticipante, type MensajePublico } from '../compartido/tipos';
+import { normalizarChat, normalizarDiseno, type EnVivo, type EstadoEquipo, type EstadoGrabadora, type EstadoParticipante, type MensajePublico } from '../compartido/tipos';
 import type { Mensaje, Sesion } from './dominio';
+
+/** Solo «desde cuándo»: el identificador interno de la transmisión no sale del servidor. */
+const enVivoPublico = (s: Sesion): EnVivo | null => (s.envivo ? { desde: s.envivo.desde } : null);
 
 const publico = (m: Mensaje, para: string): MensajePublico => ({ id: m.id, canal: m.canal, deId: m.deId, deNombre: m.deNombre, deRol: m.deRol, para, texto: m.texto, en: m.en });
 
@@ -40,6 +43,8 @@ export function estadoParaEquipo(s: Sesion, yo: string): EstadoEquipo {
     diseno: normalizarDiseno(s.diseno),
     chat: normalizarChat(s.chat),
     mensajes: (s.mensajes ?? []).map((m) => publico(m, m.para)),
+    envivo: enVivoPublico(s),
+    transmision: s.muxLlave ? 'lista' : 'sin-llave',
   };
 }
 
@@ -55,5 +60,16 @@ export function estadoParaParticipante(s: Sesion, pid: string): EstadoParticipan
     diseno: normalizarDiseno(s.diseno),
     chat: normalizarChat(s.chat),
     mensajes: mensajesParaParticipante(s, pid),
+    envivo: enVivoPublico(s),
   };
+}
+
+/**
+ * Lo que ve la página que se transmite: SOLO quién está en el escenario (equipo y participantes, con su nombre) y el diseño.
+ * Todo lo demás (backstage, sala verde, lobby, chats) queda fuera, y la página solo muestra y escucha a esas personas.
+ */
+export function estadoParaGrabadora(s: Sesion): EstadoGrabadora {
+  const equipo = Object.values(s.equipo).filter((m) => m.enEscenario).map((m) => ({ id: m.id, nombre: m.nombre }));
+  const gente = Object.values(s.participantes).filter((p) => p.lugar === 'escenario').sort((a, b) => a.entroEn - b.entroEn).map((p) => ({ id: p.id, nombre: p.nombre }));
+  return { tipo: 'estado', rol: 'grabadora', v: s.version, diseno: normalizarDiseno(s.diseno), escena: [...equipo, ...gente] };
 }

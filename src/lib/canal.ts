@@ -7,7 +7,8 @@ import { traza } from './traza';
 
 export type Destino =
   | { rol: 'participante'; sid: string; pase: string }
-  | { rol: 'equipo'; sid: string };
+  | { rol: 'equipo'; sid: string }
+  | { rol: 'grabadora'; sid: string; boleto: string };
 
 export function useCanal<E extends Estado>(destino: Destino | null): { estado: E | null; conectado: boolean } {
   const [estado, setEstado] = useState<E | null>(null);
@@ -28,6 +29,7 @@ export function useCanal<E extends Estado>(destino: Destino | null): { estado: E
     const abrir = async () => {
       const q = new URLSearchParams({ rol: destino.rol, sid: destino.sid });
       if (destino.rol === 'participante') q.set('pase', destino.pase);
+      else if (destino.rol === 'grabadora') q.set('t', destino.boleto);
       else {
         // El equipo abre el canal con un boleto de 60 s que pide por HTTP (ahí se verifica su sesión); en cada reconexión pide uno nuevo.
         try { q.set('boleto', (await api.boletoEquipo(destino.sid)).boleto); } catch { reintentar(); return; }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Room, Track, type RemoteAudioTrack } from 'livekit-client';
-import { ArrowRightLeft, BellRing, Copy, DoorOpen, EyeOff, LayoutGrid, Mic, MicOff, Video as IconoVideo, VideoOff, WifiOff, X } from 'lucide-react';
+import { ArrowRightLeft, BellRing, Radio, Copy, DoorOpen, EyeOff, LayoutGrid, Mic, MicOff, Video as IconoVideo, VideoOff, WifiOff, X } from 'lucide-react';
 import type { AjusteDiseno, Diseno, EstadoEquipo, FondoDiseno, FormaDiseno, ParticipantePublico, TipoDiseno } from '../../compartido/tipos';
 import { tieneFoco } from '../lib/acomodo';
 import { api } from '../lib/api';
@@ -38,6 +38,11 @@ function sonidosDe(room: Room | null): RemoteAudioTrack[] {
   return room ? ([...room.remoteParticipants.values()].map((p) => p.getTrackPublication(Track.Source.Microphone)?.track).filter(Boolean) as RemoteAudioTrack[]) : [];
 }
 
+/** 00:12:40 */
+const duracion = (ms: number) => {
+  const t = Math.max(0, Math.floor(ms / 1000));
+  return [Math.floor(t / 3600), Math.floor((t % 3600) / 60), t % 60].map((n) => String(n).padStart(2, '0')).join(':');
+};
 const minutos = (desde: number, ahora: number) => Math.max(0, Math.floor((ahora - desde) / 60000));
 
 // ───────── Piezas de la pantalla ─────────
@@ -250,6 +255,27 @@ export default function Consola() {
   });
   const setVista = (v: 'moderacion' | 'produccion') => { setVistaEstado(v); try { localStorage.setItem('talks:vista', v); } catch { /* sin almacenamiento: no se recuerda */ } };
   const produccion = vista === 'produccion';
+  // EN VIVO: reloj de la transmisión (solo corre mientras está al aire) y estado del botón.
+  const alAire = !!estado?.envivo;
+  const [reloj, setReloj] = useState(Date.now());
+  useEffect(() => { if (!alAire) return; setReloj(Date.now()); const t = setInterval(() => setReloj(Date.now()), 1000); return () => clearInterval(t); }, [alAire]);
+  const [empezandoVivo, setEmpezandoVivo] = useState(false);
+  const alternarEnVivo = async () => {
+    if (!estado) return;
+    try {
+      if (estado.envivo) {
+        if (!confirm('¿Terminar la transmisión? El cliente dejará de ver el escenario en su sala de observación.')) return;
+        await api.detenerEnVivo(sid);
+      } else {
+        if (estado.transmision === 'sin-llave') { setAviso('Esta sesión no tiene llave de transmisión. El Hub la manda al crear la sesión.'); return; }
+        if (!confirm('¿Empezar EN VIVO? El escenario se transmitirá a la sala de observación y Mux lo grabará. Los participantes verán el aviso EN VIVO.')) return;
+        setEmpezandoVivo(true);
+        await api.iniciarEnVivo(sid);
+      }
+    } catch (e) { setAviso(e instanceof Error ? e.message : 'No se pudo cambiar la transmisión'); }
+    finally { setEmpezandoVivo(false); }
+  };
+  const verComoSaleAlAire = () => void api.vistaPreviaTransmision(sid).then((r) => window.open(r.direccion, '_blank', 'noopener')).catch(() => setAviso('No se pudo abrir la vista previa'));
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
   const [ahora, setAhora] = useState(Date.now());
@@ -329,6 +355,11 @@ export default function Consola() {
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-[15px] font-semibold" data-testid="nombre-sesion">{estado.sesion.nombre}</h1>
           <span title={conectado ? 'Conectado' : 'Reconectando…'} className={`inline-block h-2.5 w-2.5 rounded-full ${conectado ? 'bg-ok' : 'bg-aviso'}`} />
+          {estado.envivo && (
+            <span data-testid="indicador-envivo" className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-borde-fuerte bg-white px-2.5 py-0.5 text-[12px] font-semibold">
+              <span className="punto-vivo inline-block h-2 w-2 rounded-full bg-[#d32222]" aria-hidden="true" />EN VIVO <span data-testid="reloj-envivo" className="tabular-nums">{duracion(reloj - estado.envivo.desde)}</span>
+            </span>
+          )}
           {delLobby.length > 0 && <Indicador tono="atencion" icono={BellRing} data-testid="indicador-lobby">{delLobby.length} en el lobby</Indicador>}
           {enVerde.length > 0 && <Indicador tono="sala" icono={DoorOpen} data-testid="indicador-verde">{enVerde.length} en la sala verde</Indicador>}
         </div>
@@ -339,6 +370,12 @@ export default function Consola() {
                 className={`h-8 rounded-md px-3 text-[13px] font-semibold ${vista === v ? 'bg-teal text-white' : 'text-teal'}`}>{nombre}</button>
             ))}
           </div>
+          {produccion && <Boton data-testid="ver-al-aire" onClick={verComoSaleAlAire}>Ver como sale al aire</Boton>}
+          <button data-testid="boton-envivo" onClick={() => void alternarEnVivo()} disabled={empezandoVivo} aria-pressed={alAire}
+            title={estado.transmision === 'sin-llave' && !alAire ? 'Falta la llave de transmisión: el Hub la manda al crear la sesión' : undefined}
+            className={`inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-[13px] font-semibold ${alAire ? 'bg-peligro text-white' : 'bg-teal text-white'} ${estado.transmision === 'sin-llave' && !alAire ? 'opacity-60' : ''}`}>
+            <Radio size={14} aria-hidden="true" />{empezandoVivo ? 'Empezando…' : alAire ? 'Terminar EN VIVO' : 'Empezar EN VIVO'}
+          </button>
           <Boton onClick={() => void navigator.clipboard?.writeText(`${location.origin}/p/${estado.sesion.codigo}`).then(() => setAviso('Link de participantes copiado'))} data-testid="copiar-link">
             <span className="inline-flex items-center gap-1.5"><Copy size={14} />Link de participantes</span>
           </Boton>

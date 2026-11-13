@@ -48,6 +48,9 @@ export interface MensajePublico {
 }
 export const MAX_TEXTO_CHAT = 500;
 
+/** La sesión se está transmitiendo (y Mux la graba). Lo ve el equipo y también los participantes: tienen derecho a saberlo. */
+export interface EnVivo { desde: number }
+
 /** Dónde está una persona. El orden de las salas es: lobby → sala verde → sesión (backstage o escenario). */
 export type Lugar = 'lobby' | 'verde' | 'backstage' | 'escenario';
 
@@ -83,6 +86,9 @@ export interface EstadoEquipo {
   diseno: Diseno;
   chat: ConfigChat;
   mensajes: MensajePublico[];
+  envivo: EnVivo | null;
+  /** «lista»: hay una llave de Mux para transmitir. «sin-llave»: falta (el Hub la manda al crear la sesión). La llave NUNCA viaja. */
+  transmision: 'lista' | 'sin-llave';
 }
 
 /** Lo que ve un participante: solo lo suyo, el equipo y quién está en el escenario. Nunca la lista completa. */
@@ -96,11 +102,24 @@ export interface EstadoParticipante {
   escenario: { id: string; nombre: string }[];
   diseno: Diseno;
   chat: ConfigChat;
+  envivo: EnVivo | null;
   /** Solo lo que este participante puede leer: lo suyo y lo que el equipo le escribió a él o a todos. NUNCA el chat del equipo. */
   mensajes: MensajePublico[];
 }
 
-export type Estado = EstadoEquipo | EstadoParticipante;
+/**
+ * Lo que ve la página que se TRANSMITE (la que LiveKit abre y manda a Mux): solo el diseño y quién está en el escenario, con su nombre.
+ * Nada de backstage, ni sala verde, ni lobby, ni chats.
+ */
+export interface EstadoGrabadora {
+  tipo: 'estado';
+  rol: 'grabadora';
+  v: number;
+  diseno: Diseno;
+  escena: { id: string; nombre: string }[];
+}
+
+export type Estado = EstadoEquipo | EstadoParticipante | EstadoGrabadora;
 
 /**
  * UNA sola sala de LiveKit por sesión. Lobby, sala verde, backstage y escenario son estados dentro de esa sala:

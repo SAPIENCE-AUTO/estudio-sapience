@@ -34,6 +34,13 @@ export function leerBoleto(boleto: string | undefined | null): DatosBoleto | nul
   return d?.sid && d.email && d.nombre ? { sid: d.sid, email: d.email, nombre: d.nombre } : null;
 }
 
+// ---- Boleto de la grabadora: la página que se transmite (la abre LiveKit, no una persona). Vale 12 horas y solo sirve para una sesión ----
+export const firmarGrabadora = (sid: string): string => sellos.firmar('grabadora', { sid }, 12 * 3600 * 1000);
+export function leerGrabadora(boleto: string | undefined | null): { sid: string } | null {
+  const d = sellos.leer<{ sid: string }>('grabadora', boleto);
+  return d?.sid ? { sid: d.sid } : null;
+}
+
 // ---- Acceso del equipo ----
 /** Pregunta a Supabase quién es el dueño del token (el mismo camino que usa el Hub). null = inválido o vencido; lanza si no contestó. */
 async function usuarioDeSupabase(token: string): Promise<UsuarioSupabase | null> {

@@ -1,12 +1,12 @@
 // Canal en vivo (WebSocket) con cada pantalla abierta. Cada quien recibe SU vista del estado, con número de versión.
 import type { WebSocket } from 'ws';
 import type { Sesion } from './dominio';
-import { estadoParaEquipo, estadoParaParticipante } from './vistas';
+import { estadoParaEquipo, estadoParaGrabadora, estadoParaParticipante } from './vistas';
 
 export interface Cliente {
   ws: WebSocket;
   sid: string;
-  rol: 'equipo' | 'participante';
+  rol: 'equipo' | 'participante' | 'grabadora';
   /** Id del miembro del equipo o del participante. */
   id: string;
   vivo: boolean;
@@ -30,7 +30,7 @@ export function conexionesDe(sid: string, id: string): number {
 }
 
 function vistaPara(c: Cliente, s: Sesion): string | null {
-  const estado = c.rol === 'equipo' ? estadoParaEquipo(s, c.id) : estadoParaParticipante(s, c.id);
+  const estado = c.rol === 'equipo' ? estadoParaEquipo(s, c.id) : c.rol === 'grabadora' ? estadoParaGrabadora(s) : estadoParaParticipante(s, c.id);
   return estado ? JSON.stringify(estado) : null;
 }
 

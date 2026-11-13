@@ -45,6 +45,8 @@ export interface Mensaje {
 }
 
 export interface Sesion {
+  /** La transmisión en curso (en LiveKit: el egress que manda el escenario a Mux). Ausente si no se está transmitiendo. */
+  envivo?: { egressId: string; desde: number };
   /** Identificador del evento del calendario del Hub al que pertenece esta sesión (una sesión por evento). */
   externoId?: string;
   /**
@@ -261,6 +263,24 @@ export function ponerChat(s: Sesion, nuevo: ConfigChat): { cambio: boolean } {
   s.chat = { abierto: !!nuevo.abierto, grupal: !!nuevo.grupal };
   sube(s);
   return { cambio: true };
+}
+
+/** Se empezó a transmitir: queda guardado desde cuándo (los highlights cuentan desde aquí). Pide tener la llave de Mux de la sala. */
+export function iniciarEnVivo(s: Sesion, egressId: string, ahora = Date.now()): void {
+  viva(s);
+  if (s.envivo) throw new ErrorDominio('NO_PERMITIDO', 'La sesión ya está en vivo');
+  if (!s.muxLlave) throw new ErrorDominio('NO_PERMITIDO', 'Esta sesión no tiene llave de transmisión: el Hub la manda al crear la sesión');
+  s.envivo = { egressId, desde: ahora };
+  sube(s);
+}
+
+/** Se terminó la transmisión. Devuelve el identificador del egress para pedirle a LiveKit que pare (o null si no había). */
+export function detenerEnVivo(s: Sesion): string | null {
+  if (!s.envivo) return null;
+  const id = s.envivo.egressId;
+  delete s.envivo;
+  sube(s);
+  return id;
 }
 
 export function subir(s: Sesion, pid: string): { cambio: boolean; de: Lugar } {

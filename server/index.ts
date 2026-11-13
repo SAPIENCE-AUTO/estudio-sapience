@@ -5,7 +5,7 @@ import express from 'express';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { config } from './config';
 import { crearRutas, manejarErrores } from './rutas';
-import { leerBoleto, leerPase } from './auth';
+import { leerBoleto, leerGrabadora, leerPase } from './auth';
 import { idMiembro } from './dominio';
 import * as servicio from './servicio';
 import { clientes, conexionesDe, enviarEstado, quitar, registrar, type Cliente } from './difusion';
@@ -26,7 +26,7 @@ app.use(manejarErrores);
 const servidor = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
 
-interface Identidad { rol: 'equipo' | 'participante'; id: string; email?: string; nombre?: string }
+interface Identidad { rol: 'equipo' | 'participante' | 'grabadora'; id: string; email?: string; nombre?: string }
 
 servidor.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url ?? '', 'http://localhost');
@@ -43,6 +43,10 @@ servidor.on('upgrade', (req, socket, head) => {
     // El equipo abre el canal con un boleto de 60 s que pidió por HTTP (ahí sí se verificó su sesión).
     const b = leerBoleto(url.searchParams.get('boleto'));
     if (b && b.sid === sid) identidad = { rol, id: idMiembro(b.email), email: b.email, nombre: b.nombre };
+  } else if (rol === 'grabadora') {
+    // La página que se transmite entra con su boleto de 12 horas (lo arma el servidor al empezar el EN VIVO).
+    const g = leerGrabadora(url.searchParams.get('t'));
+    if (g && g.sid === sid) identidad = { rol, id: 'grabadora' };
   }
   if (!identidad) { socket.destroy(); return; }
   const quien = identidad;
@@ -50,13 +54,15 @@ servidor.on('upgrade', (req, socket, head) => {
 });
 
 const presencia = (i: Identidad) => (i.rol === 'equipo' ? { equipoId: i.id } : { participanteId: i.id });
+/** La grabadora no es una persona: no cuenta como conectada ni aparece en ninguna lista. */
+const esPersona = (i: Identidad) => i.rol !== 'grabadora';
 
 async function alConectar(ws: WebSocket, sid: string, identidad: Identidad): Promise<void> {
   const c: Cliente = { ws, sid, rol: identidad.rol, id: identidad.id, vivo: true };
   try {
     if (identidad.rol === 'equipo') await servicio.unirseEquipo(sid, identidad.email!, identidad.nombre!);
     registrar(c);
-    await servicio.conexion(sid, presencia(identidad), true); // difunde el estado a todos, también a esta pantalla
+    if (esPersona(identidad)) await servicio.conexion(sid, presencia(identidad), true); // difunde el estado a todos, también a esta pantalla
   } catch { ws.close(); return; }
   const s = servicio.sesionPorId(sid);
   if (s) enviarEstado(c, s);
@@ -65,7 +71,7 @@ async function alConectar(ws: WebSocket, sid: string, identidad: Identidad): Pro
   ws.on('close', () => {
     quitar(c);
     // Una pequeña espera: recargar la página no debe marcar a nadie como desconectado ni sacudir a las demás pantallas.
-    setTimeout(() => { if (conexionesDe(sid, c.id) === 0) void servicio.conexion(sid, presencia(identidad), false); }, 4000);
+    if (esPersona(identidad)) setTimeout(() => { if (conexionesDe(sid, c.id) === 0) void servicio.conexion(sid, presencia(identidad), false); }, 4000);
   });
 }
 

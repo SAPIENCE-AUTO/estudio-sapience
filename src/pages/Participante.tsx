@@ -284,7 +284,15 @@ function Dentro({ entrada, camId, micId }: { entrada: RespuestaEntrar; camId?: s
 
   return (
     <div data-lugar={yo.lugar} data-testid="dentro" className={`mx-auto flex min-h-full w-full flex-col ${yo.lugar === 'backstage' || yo.lugar === 'escenario' ? 'max-w-md md:max-w-5xl' : 'max-w-md'}`}>
-      <div className="flex items-center justify-between px-5 pb-3 pt-5">{chip}{punto}</div>
+      <div className="flex items-center justify-between gap-2 px-5 pb-3 pt-5">
+        {chip}
+        {estado.envivo && (
+          <span data-testid="aviso-envivo" title="Esta sesión se está transmitiendo y grabando" className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-borde-fuerte bg-white px-2.5 py-1 text-xs font-semibold">
+            <span className="punto-vivo inline-block h-2 w-2 rounded-full bg-[#d32222]" aria-hidden="true" />EN VIVO
+          </span>
+        )}
+        {punto}
+      </div>
       {sonidos.map((t) => <AudioRemoto key={t.sid} pista={t} />)}
       {room && !room.canPlaybackAudio && (
         <button onClick={() => void room.startAudio()} className="mx-5 mb-3 h-11 rounded-xl bg-oro text-sm font-semibold text-oro-texto">Activar el sonido</button>

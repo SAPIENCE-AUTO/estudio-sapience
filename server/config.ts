@@ -19,6 +19,8 @@ const esquema = z.object({
   HUB_API_KEY: z.string().default(''),
   // Base de datos donde se guardan las sesiones (la del proyecto de Supabase de Talks). Vacía = archivo local, solo para desarrollo.
   DATABASE_URL: z.string().default('').transform((s) => s.trim()),
+  // A dónde se transmite el EN VIVO: el servidor RTMP de Mux (la llave de cada sala se agrega al final). Rara vez cambia.
+  MUX_RTMP_URL: z.string().default('rtmps://global-live.mux.com:443/app').transform((s) => s.trim().replace(/\/+$/, '')),
   // Cuánto espera el servidor a que vuelva alguien que se desconectó antes de regresarlo al lobby (las redes flojas se reconectan solas).
   GRACIA_DESCONEXION_SEGUNDOS: z.coerce.number().min(1).default(30),
   NODE_ENV: z.string().default('development'),
