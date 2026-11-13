@@ -2,7 +2,7 @@
 // la lee y la borra. No imprime la dirección de conexión. Uso (la dirección va solo en tu terminal, nunca en un archivo ni en el chat):
 //   DATABASE_URL='postgresql://...' npm run db:probar
 import { almacenPostgres } from '../server/almacen';
-import { crearPool } from '../server/baseDeDatos';
+import { avisoDeDireccion, crearPool, explicarFalloDeConexion } from '../server/baseDeDatos';
 import { nuevaSesion } from '../server/dominio';
 
 const url = process.env.DATABASE_URL?.trim();
@@ -12,6 +12,8 @@ if (!url) {
 }
 
 const paso = (texto: string) => console.log(`  ${texto}`);
+const aviso = avisoDeDireccion(url);
+if (aviso) console.log(`\n⚠ ${aviso}\n  (Desde tu computadora puede funcionar, pero en Render fallaría.)\n`);
 const pool = crearPool(url);
 try {
   console.log('Probando la base de Talks…');
@@ -38,7 +40,7 @@ try {
   paso('La tabla tiene la seguridad por filas encendida (nadie entra por la API pública)');
   console.log('\nTodo bien: Talks puede guardar sus sesiones ahí.');
 } catch (e) {
-  console.error('\nFalló:', (e as Error).message);
+  console.error('\nFalló:', explicarFalloDeConexion(e, url));
   process.exitCode = 1;
 } finally {
   await pool.end();

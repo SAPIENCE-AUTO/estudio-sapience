@@ -5,7 +5,7 @@ import { salaSesion } from '../compartido/tipos';
 import type { RespuestaAccion, RespuestaEntrar, RespuestaTokenEquipo, CanalChat, ConfigChat, Diseno } from '../compartido/tipos';
 import * as d from './dominio';
 import { almacenArchivo, almacenPostgres, type Almacen } from './almacen';
-import { crearPool } from './baseDeDatos';
+import { avisoDeDireccion, crearPool, explicarFalloDeConexion } from './baseDeDatos';
 import { difundir } from './difusion';
 import { firmarPase } from './auth';
 import * as lk from './livekit';
@@ -216,7 +216,17 @@ export function conexion(sid: string, quien: { participanteId?: string; equipoId
  */
 export async function iniciar(elegido?: Almacen): Promise<void> {
   almacen = elegido ?? (config.DATABASE_URL ? almacenPostgres(crearPool(config.DATABASE_URL)) : almacenArchivo());
-  Object.assign(sesiones, await almacen.cargar());
+  if (config.DATABASE_URL && !elegido) { const aviso = avisoDeDireccion(config.DATABASE_URL); if (aviso) console.warn(`AVISO: ${aviso}`); }
+  // Si la base no contesta se reintenta unos segundos y, si sigue sin contestar, el servidor NO arranca (así Render conserva la versión que ya funcionaba).
+  for (let intento = 1; ; intento++) {
+    try { Object.assign(sesiones, await almacen.cargar()); break; }
+    catch (e) {
+      const motivo = config.DATABASE_URL && !elegido ? explicarFalloDeConexion(e, config.DATABASE_URL) : (e as Error).message;
+      if (intento >= 4) { console.error(`No se pudo abrir la base de datos de Talks: ${motivo}`); process.exit(1); }
+      console.warn(`La base de datos no contestó (intento ${intento} de 4): ${motivo}`);
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+  }
   for (const s of Object.values(sesiones)) {
     if (s.terminada) continue;
     for (const p of Object.values(s.participantes)) if (p.lugar !== 'lobby' && !p.conectado) vigilarAusencia(s.id, p.id);
