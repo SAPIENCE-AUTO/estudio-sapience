@@ -10,6 +10,7 @@ import { listarDispositivos, pedirPermiso, useNivelMicrofono, useVistaPrevia, ty
 import { Mosaico } from '../components/Mosaico';
 import { AudioRemoto } from '../components/Video';
 import { Lienzo } from '../components/Lienzo';
+import { ChatParticipante } from '../components/Chat';
 import { AVISO_ACEPTO, AVISO_COMPLETO, AVISO_RESUMEN } from '../lib/aviso';
 
 type Paso = 'cargando' | 'invalido' | 'aviso' | 'nombre' | 'dispositivos' | 'dentro';
@@ -267,6 +268,7 @@ function Dentro({ entrada, camId, micId }: { entrada: RespuestaEntrar; camId?: s
   if (estado.sesion.terminada) return <Marco><Tarjeta><h1 className="text-lg font-semibold">La sesión terminó</h1><p className="mt-1 text-sm text-tenue">Gracias por participar.</p></Tarjeta></Marco>;
 
   const yo = estado.yo;
+  const conChat = yo.lugar !== 'lobby'; // en el lobby todavía no hay chat; en la sala verde es el de la sala verde y desde backstage el de la sesión
   const equipoEnEscenario = estado.equipo.filter((m) => m.enEscenario);
   const enPantalla = [...equipoEnEscenario.map((m) => ({ id: m.id, nombre: m.nombre })), ...estado.escenario];
   const otrosEnPantalla = enPantalla.filter((p) => p.id !== yo.id);
@@ -337,8 +339,19 @@ function Dentro({ entrada, camId, micId }: { entrada: RespuestaEntrar; camId?: s
         </div>
       )}
 
+      {conChat && (
+        <div className="mt-auto pb-3">
+          {yo.lugar === 'verde' && <ChatParticipante titulo="Chat con el equipo" nota="Solo lo lee el equipo." pase={entrada.pase} mensajes={estado.mensajes.filter((m) => m.canal === 'verde')} yo={yo.id} />}
+          {yo.lugar !== 'verde' && (
+            <ChatParticipante titulo={estado.chat.grupal ? 'Chat de la sesión' : 'Chat con el equipo'} cerrado={!estado.chat.abierto} pase={entrada.pase} yo={yo.id}
+              nota={estado.chat.grupal ? 'Todos los que están adentro leen este chat.' : 'Solo lo lee el equipo; te contestan a ti.'}
+              mensajes={estado.mensajes.filter((m) => m.canal === 'sesion')} />
+          )}
+        </div>
+      )}
+
       {yo.lugar !== 'lobby' && (
-        <div className="mx-5 mb-5 mt-auto flex justify-center gap-6 rounded-3xl border border-borde bg-tarjeta px-4 py-3">
+        <div className={`mx-5 mb-5 ${conChat ? '' : 'mt-auto'} flex justify-center gap-6 rounded-3xl border border-borde bg-tarjeta px-4 py-3`}>
           <button aria-label={silenciado ? 'El equipo silenció tu micrófono' : micEncendido ? 'Silenciar micrófono' : 'Activar micrófono'} title={silenciado ? 'El equipo silenció tu micrófono' : undefined} data-testid="boton-mic" disabled={silenciado}
             onClick={() => { const nuevo = !micEncendido; setQuiereMic(nuevo); void room?.localParticipant.setMicrophoneEnabled(nuevo); }}
             className={`flex h-[56px] w-[56px] items-center justify-center rounded-full text-white ${micEncendido ? 'bg-teal' : 'bg-peligro'}`}>

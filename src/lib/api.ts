@@ -1,4 +1,4 @@
-import type { RespuestaAccion, RespuestaEntrar, RespuestaTokenEquipo, Diseno } from '../../compartido/tipos';
+import type { RespuestaAccion, RespuestaEntrar, RespuestaTokenEquipo, CanalChat, ConfigChat, Diseno } from '../../compartido/tipos';
 import { tokenDeEquipo } from './acceso';
 
 export class ErrorApi extends Error {
@@ -41,6 +41,9 @@ export const api = {
   crearSesion: (nombre: string) => pedir<ResumenSesion>('/v1/sesiones', { equipo: true, cuerpo: { nombre } }),
   accion: (sid: string, pid: string, accion: 'llamar' | 'pasar' | 'lobby' | 'subir' | 'bajar') =>
     pedir<RespuestaAccion>(`/sesiones/${sid}/participantes/${pid}/${accion}`, { equipo: true }),
+  chatEquipo: (sid: string, canal: CanalChat, texto: string, para: string) => pedir<RespuestaAccion>(`/sesiones/${sid}/chat`, { equipo: true, cuerpo: { canal, texto, para } }),
+  chatConfig: (sid: string, cfg: ConfigChat) => pedir<RespuestaAccion>(`/sesiones/${sid}/chat/config`, { equipo: true, cuerpo: cfg }),
+  chatParticipante: (pase: string, texto: string) => pedir<RespuestaAccion>('/yo/chat', { pase, cuerpo: { texto } }),
   diseno: (sid: string, diseno: Diseno) => pedir<RespuestaAccion>(`/sesiones/${sid}/diseno`, { equipo: true, cuerpo: diseno }),
   silenciar: (sid: string, pid: string, silenciado: boolean) => pedir<RespuestaAccion>(`/sesiones/${sid}/participantes/${pid}/silenciar`, { equipo: true, cuerpo: { silenciado } }),
   yo: () => pedir<{ email: string; nombre: string }>('/equipo/yo', { equipo: true, metodo: 'GET' }),

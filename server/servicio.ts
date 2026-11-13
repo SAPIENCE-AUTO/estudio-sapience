@@ -2,7 +2,7 @@
 // Todo lo que cambia una sesión pasa por UNA fila (una acción a la vez por sesión): así las ráfagas de clics no se pisan.
 // Cada acción trabaja sobre una copia y solo se confirma si LiveKit también respondió bien: nunca queda a medias.
 import { salaSesion } from '../compartido/tipos';
-import type { RespuestaAccion, RespuestaEntrar, RespuestaTokenEquipo, Diseno } from '../compartido/tipos';
+import type { RespuestaAccion, RespuestaEntrar, RespuestaTokenEquipo, CanalChat, ConfigChat, Diseno } from '../compartido/tipos';
 import * as d from './dominio';
 import { guardarPronto, cargar } from './almacen';
 import { difundir } from './difusion';
@@ -117,6 +117,18 @@ export function regresarALobby(sid: string, pid: string): Promise<RespuestaAccio
     if (r.cambio) await permisosPorLugar(s, pid, 'lobby');
     return respuesta(s);
   });
+}
+
+/** Chats. No tocan LiveKit: son estado de la sesión, igual que todo lo demás, y llegan con la versión. */
+export function mensajeDelEquipo(sid: string, equipoId: string, canal: CanalChat, texto: string, para: string): Promise<RespuestaAccion> {
+  return transaccion(sid, async (s) => { d.mensajeDelEquipo(s, equipoId, canal, texto, para); return respuesta(s); });
+}
+export function mensajeDeParticipante(sid: string, pid: string, texto: string): Promise<RespuestaAccion> {
+  return transaccion(sid, async (s) => { d.mensajeDeParticipante(s, pid, texto); return respuesta(s); });
+}
+
+export function ponerChat(sid: string, cfg: ConfigChat): Promise<RespuestaAccion> {
+  return transaccion(sid, async (s) => { d.ponerChat(s, cfg); return respuesta(s); });
 }
 
 /** El equipo elige el diseño del escenario. No toca LiveKit: solo cambia cómo se dibuja (en pantalla, y más adelante en la grabación). */

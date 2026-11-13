@@ -102,6 +102,16 @@ export function crearRutas(): express.Router {
     res.json(await servicio.ponerEnEscenario(req.params.sid as string, idMiembro(req.equipo!.email), enEscenario));
   }));
 
+  r.post('/sesiones/:sid/chat/config', exigirEquipo, ruta(async (req, res) => {
+    const cfg = z.object({ abierto: z.boolean(), grupal: z.boolean() }).parse(req.body);
+    res.json(await servicio.ponerChat(req.params.sid as string, cfg));
+  }));
+
+  r.post('/sesiones/:sid/chat', exigirEquipo, ruta(async (req: ConEquipo, res) => {
+    const { canal, texto, para } = z.object({ canal: z.enum(['equipo', 'verde', 'sesion']), texto: z.string().max(2000), para: z.string().max(40).default('todos') }).parse(req.body);
+    res.json(await servicio.mensajeDelEquipo(req.params.sid as string, idMiembro(req.equipo!.email), canal, texto, para));
+  }));
+
   r.post('/sesiones/:sid/diseno', exigirEquipo, ruta(async (req, res) => {
     const diseno = z.object({
       tipo: z.enum(TIPOS_DISENO), fijado: z.string().nullable(), forma: z.enum(FORMAS_DISENO), ajuste: z.enum(AJUSTES_DISENO), fondo: z.enum(FONDOS_DISENO),
@@ -127,6 +137,11 @@ export function crearRutas(): express.Router {
 
   r.post('/yo/livekit', exigirPase, ruta(async (req: ConPase, res) => {
     res.json(await servicio.livekitDeParticipante(req.pase!.sid, req.pase!.pid));
+  }));
+
+  r.post('/yo/chat', exigirPase, ruta(async (req: ConPase, res) => {
+    const { texto } = z.object({ texto: z.string().max(2000) }).parse(req.body);
+    res.json(await servicio.mensajeDeParticipante(req.pase!.sid, req.pase!.pid, texto));
   }));
 
   r.post('/yo/salir', exigirPase, ruta(async (req: ConPase, res) => {

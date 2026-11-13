@@ -1,7 +1,7 @@
 // Reglas de la sesión, sin red ni LiveKit: quién puede estar dónde y cómo se mueve.
 // Todo lo que cambia el estado sube la versión. Las acciones repetidas no cambian nada (así un doble clic no estorba).
 import { randomBytes, createHash } from 'node:crypto';
-import { AJUSTES_DISENO, FONDOS_DISENO, FORMAS_DISENO, TIPOS_DISENO, normalizarDiseno, type Diseno, type Lugar } from '../compartido/tipos';
+import { AJUSTES_DISENO, FONDOS_DISENO, FORMAS_DISENO, MAX_TEXTO_CHAT, TIPOS_DISENO, normalizarChat, normalizarDiseno, type CanalChat, type ConfigChat, type Diseno, type Lugar } from '../compartido/tipos';
 
 export class ErrorDominio extends Error {
   constructor(public codigo: 'NO_ENCONTRADO' | 'NO_PERMITIDO' | 'SESION_TERMINADA', mensaje: string) {
@@ -30,7 +30,25 @@ export interface Miembro {
   conectado: boolean;
 }
 
+export interface Mensaje {
+  id: string;
+  canal: CanalChat;
+  deId: string;
+  deNombre: string;
+  deRol: 'equipo' | 'participante';
+  /** 'equipo' (lo escribió un participante), 'todos' o el id de un participante. */
+  para: string;
+  texto: string;
+  en: number;
+  /** Solo en el chat de la sesión: si lo escribió un participante cuando el chat estaba en modo grupal (se decide AL ESCRIBIR, nunca después). */
+  grupal?: boolean;
+}
+
 export interface Sesion {
+  /** Cómo está el chat de la sesión. Ausente en sesiones guardadas antes de que existiera (= abierto, solo con el equipo). */
+  chat?: ConfigChat;
+  /** Mensajes de los chats (los últimos MAX_MENSAJES). Ausente en sesiones guardadas antes de que existieran. */
+  mensajes?: Mensaje[];
   /** Diseño del escenario. Ausente en sesiones guardadas antes de que existiera (= automático). */
   diseno?: Diseno;
   id: string;
@@ -150,6 +168,57 @@ export function ponerDiseno(s: Sesion, nuevo: Diseno): { cambio: boolean } {
   const actual = normalizarDiseno(s.diseno);
   if (JSON.stringify(actual) === JSON.stringify(nuevo)) return { cambio: false };
   s.diseno = { ...nuevo };
+  sube(s);
+  return { cambio: true };
+}
+
+const MAX_MENSAJES = 300;
+
+function guardarMensaje(s: Sesion, m: Omit<Mensaje, 'id' | 'en'>, ahora: number): Mensaje {
+  const texto = m.texto.replace(/\s+/g, ' ').trim().slice(0, MAX_TEXTO_CHAT);
+  if (!texto) throw new ErrorDominio('NO_PERMITIDO', 'Escribe un mensaje');
+  const nuevo: Mensaje = { ...m, texto, id: 'm_' + aleatorio(4), en: ahora };
+  s.mensajes = [...(s.mensajes ?? []), nuevo].slice(-MAX_MENSAJES);
+  sube(s);
+  return nuevo;
+}
+
+/** El equipo escribe: en su chat interno, a la sala verde (a la persona que está ahí) o a la sesión (a todos o a una persona). */
+export function mensajeDelEquipo(s: Sesion, equipoId: string, canal: CanalChat, texto: string, para: string, ahora = Date.now()): Mensaje {
+  viva(s);
+  const m = miembro(s, equipoId);
+  let destino = 'equipo';
+  if (canal === 'sesion') {
+    if (para !== 'todos') participante(s, para);
+    destino = para;
+  } else if (canal === 'verde') {
+    if (participante(s, para).lugar !== 'verde') throw new ErrorDominio('NO_PERMITIDO', 'Esa persona ya no está en la sala verde');
+    destino = para;
+  }
+  return guardarMensaje(s, { canal, deId: m.id, deNombre: m.nombre, deRol: 'equipo', para: destino, texto }, ahora);
+}
+
+/**
+ * Un participante le escribe al equipo. En la sala verde, a la sala verde; desde backstage en adelante, al chat de la sesión
+ * (si el equipo lo cerró no puede). En el lobby todavía no.
+ */
+export function mensajeDeParticipante(s: Sesion, pid: string, texto: string, ahora = Date.now()): Mensaje {
+  viva(s);
+  const p = participante(s, pid);
+  const base = { deId: p.id, deNombre: p.nombre, deRol: 'participante' as const, para: 'equipo', texto };
+  if (p.lugar === 'verde') return guardarMensaje(s, { ...base, canal: 'verde' }, ahora);
+  if (p.lugar !== 'backstage' && p.lugar !== 'escenario') throw new ErrorDominio('NO_PERMITIDO', 'Todavía no puedes escribir');
+  const cfg = normalizarChat(s.chat);
+  if (!cfg.abierto) throw new ErrorDominio('NO_PERMITIDO', 'El chat está cerrado');
+  return guardarMensaje(s, { ...base, canal: 'sesion', grupal: cfg.grupal }, ahora);
+}
+
+/** El equipo abre o cierra el chat de la sesión y elige si los participantes se leen entre sí. */
+export function ponerChat(s: Sesion, nuevo: ConfigChat): { cambio: boolean } {
+  viva(s);
+  const actual = normalizarChat(s.chat);
+  if (actual.abierto === nuevo.abierto && actual.grupal === nuevo.grupal) return { cambio: false };
+  s.chat = { abierto: !!nuevo.abierto, grupal: !!nuevo.grupal };
   sube(s);
   return { cambio: true };
 }

@@ -448,6 +448,125 @@ async function main() {
       await degradar(b); await degradar(a);
     }
 
+    // ── Chats: quién escribe, quién lee y qué NUNCA le llega a un participante ──
+    {
+      const leidos = (pagina: Page) => pagina.evaluate(() => [...document.querySelectorAll('[data-testid="chat-participante"] [data-testid="chat-mensaje"]')].map((e) => e.textContent ?? ''));
+      const veTexto = async (pagina: Page, texto: string) => (await leidos(pagina)).some((t) => t.includes(texto));
+      const enConsola = (texto: string) => `[...document.querySelectorAll('[data-testid="chat-consola"] [data-testid="chat-mensaje"]')].some((e) => (e.textContent || '').includes(${JSON.stringify(texto)}))`;
+      const escribir = async (pagina: Page, texto: string) => { await pagina.click('[data-testid="chat-texto"]'); await pagina.type('[data-testid="chat-texto"]', texto); await pagina.keyboard.press('Enter'); };
+      const idDe = (nombre: string) => consola.evaluate((n: string) => [...document.querySelectorAll('[data-testid="chat-para"] option')].find((o) => o.textContent === `Solo ${n}`)?.getAttribute('value') ?? '', nombre);
+
+      for (const n of [a, b, c]) await clic(paginas[n], 'chat-barra');
+      await escribir(paginas[a], 'No escucho bien');
+      await esperar(consola, enConsola('No escucho bien'));
+      anotar('El equipo recibe lo que escribe un participante', true);
+      await dormir(800);
+      anotar('Los demás participantes NO ven lo que escribió otro', !(await veTexto(paginas[b], 'No escucho bien')) && !(await veTexto(paginas[c], 'No escucho bien')));
+      anotar('Quien lo escribió lo ve en su propio chat', await veTexto(paginas[a], 'No escucho bien'));
+
+      // El equipo contesta SOLO a Ana.
+      await consola.select('[data-testid="chat-para"]', await idDe(a));
+      await escribir(consola, 'Ana, ya lo revisamos');
+      await esperar(paginas[a], `[...document.querySelectorAll('[data-testid="chat-participante"] [data-testid="chat-mensaje"]')].some((e) => (e.textContent || '').includes('ya lo revisamos'))`);
+      await dormir(800);
+      anotar('Una respuesta a una persona solo la lee esa persona', !(await veTexto(paginas[b], 'ya lo revisamos')) && !(await veTexto(paginas[c], 'ya lo revisamos')));
+      anotar('La respuesta privada le avisa que es solo para ella', (await leidos(paginas[a])).some((t) => t.includes('solo para ti')));
+
+      // El equipo contesta a TODOS.
+      await consola.select('[data-testid="chat-para"]', 'todos');
+      await escribir(consola, 'Seguimos en cinco minutos');
+      for (const n of [a, b, c]) await esperar(paginas[n], `[...document.querySelectorAll('[data-testid="chat-participante"] [data-testid="chat-mensaje"]')].some((e) => (e.textContent || '').includes('Seguimos en cinco'))`);
+      anotar('Una respuesta a todos la leen todos', true);
+
+      // El chat del equipo es interno: ningún participante lo ve, en ningún lugar de su pantalla.
+      await clic(consola, 'chat-tab-equipo');
+      await escribir(consola, 'nota interna del equipo');
+      await esperar(consola, enConsola('nota interna del equipo'));
+      await dormir(1200);
+      const textoPantallas = await Promise.all([a, b, c].map((n) => paginas[n].evaluate(() => document.body.innerText)));
+      anotar('El chat del equipo NUNCA llega a los participantes', textoPantallas.every((t) => !t.includes('nota interna del equipo')));
+      await clic(consola, 'chat-tab-sesion');
+
+      // Aviso de mensajes nuevos con el chat cerrado (también en la consola, con la otra pestaña).
+      await clic(paginas[b], 'chat-barra'); // lo cierra
+      await consola.select('[data-testid="chat-para"]', 'todos');
+      await escribir(consola, 'Un último aviso');
+      await esperar(paginas[b], JS.hay('[data-testid="chat-participante"] [data-testid="chat-nuevos"]'));
+      anotar('Con el chat cerrado el participante ve «1 nuevo»', true);
+      await clic(paginas[b], 'chat-barra');
+      await esperar(paginas[b], JS.noHay('[data-testid="chat-participante"] [data-testid="chat-nuevos"]'));
+      anotar('Al abrirlo el aviso desaparece', true);
+      await clic(consola, 'chat-tab-equipo');
+      await escribir(paginas[a], 'Otro mensaje de Ana'); // lo recibe la pestaña «Participantes» mientras se mira «Equipo»
+      await esperar(consola, JS.hay('[data-testid="chat-tab-sesion"] [data-testid="chat-nuevos"]'));
+      anotar('La consola avisa de mensajes nuevos en la otra pestaña', true);
+      await clic(consola, 'chat-tab-sesion');
+
+      // La consola no se mueve al cambiar de chat, y el backstage tiene el ancho del escenario.
+      const medidas = () => consola.evaluate(() => {
+        const b = document.querySelector('[data-testid="backstage"]')!.getBoundingClientRect();
+        const e = document.querySelector('[data-testid="lista-escenario"]')!.getBoundingClientRect();
+        const c = document.querySelector('[data-testid="chat-consola"]')!.getBoundingClientRect();
+        return { arribaBackstage: Math.round(b.top), anchoBackstage: Math.round(b.width), anchoEscenario: Math.round(e.width), altoChat: Math.round(c.height) };
+      });
+      await clic(consola, 'chat-tab-sesion'); const m1 = await medidas();
+      await clic(consola, 'chat-tab-verde'); const m2 = await medidas();
+      await clic(consola, 'chat-tab-equipo'); const m3 = await medidas();
+      await clic(consola, 'chat-tab-sesion');
+      anotar('Cambiar de chat no mueve ni agranda nada: el backstage se queda en su lugar', [m2, m3].every((m) => m.arribaBackstage === m1.arribaBackstage && m.altoChat === m1.altoChat), JSON.stringify([m1, m2, m3]));
+      anotar('El backstage tiene el mismo ancho que el escenario', Math.abs(m1.anchoBackstage - m1.anchoEscenario) <= 2, `${m1.anchoBackstage} px contra ${m1.anchoEscenario} px`);
+
+      // Modo grupal: lo escrito ANTES sigue siendo privado y lo nuevo lo leen todos.
+      await clic(consola, 'chat-interruptor-grupal'); await dormir(600);
+      await escribir(paginas[a], 'Mensaje en modo grupal');
+      await esperar(paginas[b], `[...document.querySelectorAll('[data-testid="chat-participante"] [data-testid="chat-mensaje"]')].some((e) => (e.textContent || '').includes('Mensaje en modo grupal'))`);
+      anotar('En modo grupal los participantes se leen entre sí', true);
+      anotar('Lo que se escribió ANTES del modo grupal sigue siendo privado', !(await veTexto(paginas[b], 'No escucho bien')));
+      await clic(consola, 'chat-interruptor-grupal'); await dormir(600);
+      await escribir(paginas[a], 'Otra vez solo equipo');
+      await esperar(consola, enConsola('Otra vez solo equipo'));
+      await dormir(800);
+      anotar('Al volver a «solo con el equipo», lo nuevo ya no lo leen los demás', !(await veTexto(paginas[b], 'Otra vez solo equipo')));
+
+      // Cerrar el chat de la sesión.
+      await clic(consola, 'chat-interruptor-abierto');
+      await esperar(paginas[b], JS.hay('[data-testid="chat-cerrado-aviso"]'));
+      anotar('Con el chat cerrado el participante lo ve cerrado y no puede escribir', !(await paginas[b].$('[data-testid="chat-texto"]')));
+      const rechazo = await paginas[b].evaluate(async () => {
+        const k = Object.keys(sessionStorage).find((x) => x.startsWith('estudio:'))!;
+        const pase = JSON.parse(sessionStorage.getItem(k)!).entrada.pase as string;
+        const r = await fetch('/api/yo/chat', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + pase }, body: JSON.stringify({ texto: 'colado' }) });
+        return r.status;
+      });
+      anotar('El servidor también rechaza escribir con el chat cerrado', rechazo >= 400 && rechazo < 500, `estado ${rechazo}`);
+      await clic(consola, 'chat-interruptor-abierto');
+      await esperar(paginas[b], JS.hay('[data-testid="chat-participante"]'));
+      anotar('Al abrirlo otra vez el participante recupera su chat', true);
+
+      // Sala verde: chat entre quien está ahí y el equipo; nadie más lo ve.
+      await clic(consola, `verde-${c}`);
+      await esperar(paginas[c], JS.lugar('verde'));
+      await esperar(paginas[c], JS.hay('[data-testid="chat-barra"]'));
+      await clic(paginas[c], 'chat-barra');
+      await escribir(paginas[c], 'Aquí en la sala verde');
+      await clic(consola, 'chat-tab-verde');
+      await esperar(consola, enConsola('Aquí en la sala verde'));
+      anotar('El equipo lee lo que escribe quien está en la sala verde', true);
+      await escribir(consola, 'Te escucho bien, Carla');
+      await esperar(paginas[c], `[...document.querySelectorAll('[data-testid="chat-participante"] [data-testid="chat-mensaje"]')].some((e) => (e.textContent || '').includes('Te escucho bien'))`);
+      anotar('Quien está en la sala verde lee la respuesta del equipo', true);
+      await dormir(700);
+      anotar('Nadie más ve el chat de la sala verde', !(await veTexto(paginas[a], 'Aquí en la sala verde')) && !(await veTexto(paginas[b], 'Aquí en la sala verde')) && !(await veTexto(paginas[a], 'Te escucho bien')) && !(await veTexto(paginas[b], 'Te escucho bien')));
+      await clic(consola, `pasar-${c}`);
+      await esperar(paginas[c], JS.lugar('backstage'));
+      await dormir(600);
+      anotar('Al pasar a backstage ya no se ve el chat de la sala verde', !(await veTexto(paginas[c], 'Aquí en la sala verde')));
+      await clic(consola, 'chat-tab-sesion');
+      await consola.evaluate(() => { (document.querySelector('[data-testid="cerrar-diseno"]') as HTMLElement | null)?.click(); document.querySelector('[data-testid="chat-consola"]')?.scrollIntoView({ block: 'center' }); });
+      await dormir(400);
+      await foto(consola, '13-consola-con-chat'); await foto(paginas[a], '14-participante-con-chat');
+    }
+
     // ── Regresar al lobby ──
     {
       const t0 = ahora();
@@ -455,6 +574,7 @@ async function main() {
       await esperar(paginas[c], JS.lugar('lobby'));
       await esperar(consola, JS.enSeccion('lista-lobby', c));
       anotar(`Regresar a ${c} al lobby`, true, `${Math.round(ahora() - t0)} ms`);
+      anotar(`En el lobby ${c} no tiene chat`, !(await paginas[c].$('[data-testid="chat-participante"]')));
     }
 
     // ── Desconexiones: la viñeta se apaga con aviso, se puede mover aunque esté desconectada, y si no regresa el servidor la manda al lobby ──

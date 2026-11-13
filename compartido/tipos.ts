@@ -24,6 +24,30 @@ export const DISENO_INICIAL: Diseno = { tipo: 'auto', fijado: null, forma: 'redo
 /** Completa lo que falte (sesiones guardadas antes de que existieran la forma, el ajuste y el fondo). */
 export const normalizarDiseno = (d?: Partial<Diseno> | null): Diseno => ({ ...DISENO_INICIAL, ...(d ?? {}) });
 
+/**
+ * Los chats son de un lugar y los ve quien está ahí:
+ * - equipo: solo el equipo (interno; nunca lo ve un participante).
+ * - verde: la persona que está en la sala verde y el equipo.
+ * - sesion: los que están adentro (backstage y escenario) y el equipo. «Solo con el equipo» o «grupal», y se puede cerrar.
+ */
+export type CanalChat = 'equipo' | 'verde' | 'sesion';
+/** Cómo está el chat de la sesión: abierto o cerrado, y si los participantes se leen entre sí. */
+export interface ConfigChat { abierto: boolean; grupal: boolean }
+export const CHAT_INICIAL: ConfigChat = { abierto: true, grupal: false };
+export const normalizarChat = (c?: Partial<ConfigChat> | null): ConfigChat => ({ ...CHAT_INICIAL, ...(c ?? {}) });
+export interface MensajePublico {
+  id: string;
+  canal: CanalChat;
+  deId: string;
+  deNombre: string;
+  deRol: 'equipo' | 'participante';
+  /** Equipo: 'equipo' (lo escribió un participante), 'todos' o el id de la persona a quien contesta. Participante: 'todos', 'tu' o 'equipo'. */
+  para: string;
+  texto: string;
+  en: number;
+}
+export const MAX_TEXTO_CHAT = 500;
+
 /** Dónde está una persona. El orden de las salas es: lobby → sala verde → sesión (backstage o escenario). */
 export type Lugar = 'lobby' | 'verde' | 'backstage' | 'escenario';
 
@@ -57,6 +81,8 @@ export interface EstadoEquipo {
   participantes: ParticipantePublico[];
   equipo: MiembroPublico[];
   diseno: Diseno;
+  chat: ConfigChat;
+  mensajes: MensajePublico[];
 }
 
 /** Lo que ve un participante: solo lo suyo, el equipo y quién está en el escenario. Nunca la lista completa. */
@@ -69,6 +95,9 @@ export interface EstadoParticipante {
   equipo: { id: string; nombre: string; enEscenario: boolean }[];
   escenario: { id: string; nombre: string }[];
   diseno: Diseno;
+  chat: ConfigChat;
+  /** Solo lo que este participante puede leer: lo suyo y lo que el equipo le escribió a él o a todos. NUNCA el chat del equipo. */
+  mensajes: MensajePublico[];
 }
 
 export type Estado = EstadoEquipo | EstadoParticipante;

@@ -9,6 +9,7 @@ import { useConsola, type Accion } from '../lib/useConsola';
 import { camaraDe, proteger, useCambiosDeSala } from '../lib/sala';
 import { Mosaico } from '../components/Mosaico';
 import { Lienzo, type Viñeta } from '../components/Lienzo';
+import { ChatConsola } from '../components/Chat';
 import { useVistaPrevia } from '../lib/medios';
 import { AudioRemoto } from '../components/Video';
 
@@ -40,9 +41,9 @@ function sonidosDe(room: Room | null): RemoteAudioTrack[] {
 const minutos = (desde: number, ahora: number) => Math.max(0, Math.floor((ahora - desde) / 60000));
 
 // ───────── Piezas de la pantalla ─────────
-function Tarjeta({ titulo, cuenta, aviso, icono, children, className }: { titulo: string; cuenta?: number; aviso?: React.ReactNode; icono?: React.ReactNode; children: React.ReactNode; className?: string }) {
+function Tarjeta({ titulo, cuenta, aviso, icono, children, className, ...resto }: { titulo: string; cuenta?: number; aviso?: React.ReactNode; icono?: React.ReactNode; children: React.ReactNode; className?: string; 'data-testid'?: string }) {
   return (
-    <section className={`rounded-2xl border border-borde bg-tarjeta p-4 ${className ?? ''}`}>
+    <section {...resto} className={`rounded-2xl border border-borde bg-tarjeta p-4 ${className ?? ''}`}>
       <h2 className="mb-3 flex items-center justify-between gap-2 text-[13px] font-semibold">
         <span className="inline-flex items-center gap-1.5">{icono}{titulo}</span>
         <span className="inline-flex items-center gap-1.5">{aviso}{cuenta !== undefined && <span className="rounded-md bg-teal-claro px-2 py-0.5 text-[11px] text-teal">{cuenta}</span>}</span>
@@ -338,9 +339,8 @@ export default function Consola() {
       <main className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
         <div className="grid shrink-0 grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
           <section className="flex min-w-0 flex-col gap-3">
-            <div className="mx-auto w-full" style={{ maxWidth: 'calc((100vh - 400px) * 16 / 9)', minWidth: 360 }}>
+            <div className="mx-auto flex w-full flex-col gap-3" style={{ maxWidth: 'calc((100vh - 400px) * 16 / 9)', minWidth: 360 }} data-testid="columna-escenario">
               <Lienzo data-testid="lista-escenario" items={enEscena} diseno={estado.diseno} vacio="Nadie en el escenario" />
-            </div>
             <div className="flex flex-wrap items-center justify-center gap-2" data-testid="controles">
               <BotonControl data-testid="boton-mic" activo={micOn} encendido={{ icono: <Mic size={22} aria-hidden="true" />, texto: 'Silenciar mi micrófono' }} apagado={{ icono: <MicOff size={22} aria-hidden="true" />, texto: 'Activar mi micrófono' }} onClick={() => setMicOn(!micOn)} />
               <BotonControl data-testid="boton-cam" activo={camOn} encendido={{ icono: <IconoVideo size={22} aria-hidden="true" />, texto: 'Apagar mi cámara' }} apagado={{ icono: <VideoOff size={22} aria-hidden="true" />, texto: 'Encender mi cámara' }} onClick={() => setCamOn(!camOn)} />
@@ -349,6 +349,37 @@ export default function Consola() {
               <Boton data-testid="mi-escenario" onClick={alternarEscenario}>
                 <span className="inline-flex items-center gap-1.5"><ArrowRightLeft size={14} aria-hidden="true" />{enEscenario ? 'Ir a backstage' : 'Subirme al escenario'}</span>
               </Boton>
+            </div>
+          <Tarjeta className="shrink-0" data-testid="backstage" titulo="Backstage: solo lo ve el equipo" cuenta={enBackstage.length} icono={<EyeOff size={14} aria-hidden="true" />}>
+            <div className="flex flex-wrap items-start gap-3">
+              <div className="flex flex-wrap items-start gap-3" data-testid="lista-backstage">
+                {!enBackstage.length && <p className="text-[13px] text-tenue">Nadie en backstage</p>}
+                {enBackstage.map((p) => (
+                  <div key={p.id} className="flex w-52 flex-col gap-1.5" data-testid={`tarjeta-backstage-${p.nombre}`}>
+                    <Mosaico nombre={p.nombre} pista={camaraDe(salaSesion, p.id)} className="aspect-video rounded-xl">
+                      <Velo />
+                      <ClicParaMover data-testid={`subir-${p.nombre}`} texto="Clic para subir al escenario" onClick={() => ejecutar('subir', p.id)} />
+                      <BotonMicrofono p={p} sid={sid} onError={setAviso} />
+                      {!p.conectado && <SinConexion />}
+                    </Mosaico>
+                    <div className="flex gap-1.5">
+                      <Boton data-testid={`verde-${p.nombre}`} className="flex-1" onClick={() => ejecutar('llamar', p.id)} title="Regresar a la sala verde">Sala verde</Boton>
+                      <Boton data-testid={`lobby-${p.nombre}`} className="flex-1" onClick={() => ejecutar('lobby', p.id)} title="Regresar al lobby">Lobby</Boton>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {!enEscenario && miembro && (
+                <div className="flex w-52 flex-col gap-1.5" data-testid="mi-vineta-backstage">
+                  <Mosaico nombre={miembro.nombre} esYo flujo={vistaPrevia} pista={miCamara} espejo className="aspect-video rounded-xl">
+                    <Velo />
+                    <ClicParaMover data-testid="volver-escenario" texto="Clic para volver al escenario" onClick={alternarEscenario} />
+                  </Mosaico>
+                  <p className="text-[12px] text-tenue">Tú: haz clic en tu viñeta para volver al escenario.</p>
+                </div>
+              )}
+            </div>
+          </Tarjeta>
             </div>
           </section>
 
@@ -375,39 +406,12 @@ export default function Consola() {
                 {enVerde.some((p) => p.verdeCon !== yo) && <p className="text-[12px] text-tenue">{`Con ${nombreEquipo(enVerde.find((p) => p.verdeCon !== yo)?.verdeCon ?? null)}`}</p>}
               </div>
             </Tarjeta>
+            <ChatConsola sid={sid} mensajes={estado.mensajes} yo={yo} config={estado.chat} onError={setAviso}
+              personasSesion={participantes.filter((p) => p.lugar === 'backstage' || p.lugar === 'escenario').map((p) => ({ id: p.id, nombre: p.nombre }))}
+              personasVerde={enVerde.map((p) => ({ id: p.id, nombre: p.nombre }))} />
           </aside>
         </div>
 
-        <Tarjeta className="shrink-0" titulo="Backstage: solo lo ve el equipo" cuenta={enBackstage.length} icono={<EyeOff size={14} aria-hidden="true" />}>
-          <div className="flex flex-wrap items-start gap-3">
-            <div className="flex flex-wrap items-start gap-3" data-testid="lista-backstage">
-              {!enBackstage.length && <p className="text-[13px] text-tenue">Nadie en backstage</p>}
-              {enBackstage.map((p) => (
-                <div key={p.id} className="flex w-52 flex-col gap-1.5" data-testid={`tarjeta-backstage-${p.nombre}`}>
-                  <Mosaico nombre={p.nombre} pista={camaraDe(salaSesion, p.id)} className="aspect-video rounded-xl">
-                    <Velo />
-                    <ClicParaMover data-testid={`subir-${p.nombre}`} texto="Clic para subir al escenario" onClick={() => ejecutar('subir', p.id)} />
-                    <BotonMicrofono p={p} sid={sid} onError={setAviso} />
-                    {!p.conectado && <SinConexion />}
-                  </Mosaico>
-                  <div className="flex gap-1.5">
-                    <Boton data-testid={`verde-${p.nombre}`} className="flex-1" onClick={() => ejecutar('llamar', p.id)} title="Regresar a la sala verde">Sala verde</Boton>
-                    <Boton data-testid={`lobby-${p.nombre}`} className="flex-1" onClick={() => ejecutar('lobby', p.id)} title="Regresar al lobby">Lobby</Boton>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {!enEscenario && miembro && (
-              <div className="flex w-52 flex-col gap-1.5" data-testid="mi-vineta-backstage">
-                <Mosaico nombre={miembro.nombre} esYo flujo={vistaPrevia} pista={miCamara} espejo className="aspect-video rounded-xl">
-                  <Velo />
-                  <ClicParaMover data-testid="volver-escenario" texto="Clic para volver al escenario" onClick={alternarEscenario} />
-                </Mosaico>
-                <p className="text-[12px] text-tenue">Tú: haz clic en tu viñeta para volver al escenario.</p>
-              </div>
-            )}
-          </div>
-        </Tarjeta>
       </main>
 
       {aviso && (
