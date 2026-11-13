@@ -1,5 +1,14 @@
 // Tipos que comparten el servidor y la interfaz. Lo que viaja por la red está aquí, en un solo lugar.
 
+/** Cómo se acomoda la gente en el escenario. Lo decide el equipo y lo ven todos igual (también lo que se grabe o se transmita). */
+export type TipoDiseno = 'auto' | 'foco' | 'lado' | 'redondas';
+export interface Diseno {
+  tipo: TipoDiseno;
+  /** Quién va grande en «foco» y «redondas» (si no está en el escenario, va el primero). */
+  fijado: string | null;
+}
+export const DISENO_INICIAL: Diseno = { tipo: 'auto', fijado: null };
+
 /** Dónde está una persona. El orden de las salas es: lobby → sala verde → sesión (backstage o escenario). */
 export type Lugar = 'lobby' | 'verde' | 'backstage' | 'escenario';
 
@@ -32,6 +41,7 @@ export interface EstadoEquipo {
   sesion: { id: string; nombre: string; codigo: string; terminada: boolean };
   participantes: ParticipantePublico[];
   equipo: MiembroPublico[];
+  diseno: Diseno;
 }
 
 /** Lo que ve un participante: solo lo suyo, el equipo y quién está en el escenario. Nunca la lista completa. */
@@ -43,6 +53,7 @@ export interface EstadoParticipante {
   yo: { id: string; nombre: string; lugar: Lugar; verdeCon: string | null; silenciado: boolean };
   equipo: { id: string; nombre: string; enEscenario: boolean }[];
   escenario: { id: string; nombre: string }[];
+  diseno: Diseno;
 }
 
 export type Estado = EstadoEquipo | EstadoParticipante;

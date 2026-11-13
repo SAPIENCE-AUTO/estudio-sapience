@@ -315,11 +315,13 @@ function Dentro({ entrada, camId, micId }: { entrada: RespuestaEntrar; camId?: s
       {(yo.lugar === 'backstage' || yo.lugar === 'escenario') && (
         <div className="flex flex-col gap-4 pb-6">
           <div className="px-3 md:px-5">
-            <Lienzo data-testid="escenario" vacio="Todavía no hay nadie en pantalla"
-              items={[
-                ...otrosEnPantalla.map((p) => <Mosaico key={p.id} nombre={p.nombre} pista={camaraDe(room, p.id)} className="h-full w-full" />),
-                ...(yo.lugar === 'escenario' ? [<Mosaico key={yo.id} nombre={yo.nombre} esYo pista={camaraLocal} flujo={camaraLocal ? null : vistaPrevia} espejo className="h-full w-full" />] : []),
-              ]} />
+            <Lienzo data-testid="escenario" vacio="Todavía no hay nadie en pantalla" diseno={estado.diseno}
+              items={enPantalla.map((p) => ({
+                id: p.id,
+                nodo: p.id === yo.id
+                  ? <Mosaico nombre={yo.nombre} esYo pista={camaraLocal} flujo={camaraLocal ? null : vistaPrevia} espejo className="h-full w-full" />
+                  : <Mosaico nombre={p.nombre} pista={camaraDe(room, p.id)} className="h-full w-full" />,
+              }))} />
           </div>
           <div className="flex flex-col gap-1 px-5">
             <h1 className="text-lg font-semibold">{yo.lugar === 'escenario' ? 'Estás en pantalla' : 'Estás en espera'}</h1>

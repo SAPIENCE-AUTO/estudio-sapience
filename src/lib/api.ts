@@ -1,4 +1,4 @@
-import type { RespuestaAccion, RespuestaEntrar, RespuestaTokenEquipo } from '../../compartido/tipos';
+import type { RespuestaAccion, RespuestaEntrar, RespuestaTokenEquipo, TipoDiseno } from '../../compartido/tipos';
 import { tokenDeEquipo } from './acceso';
 
 export class ErrorApi extends Error {
@@ -41,6 +41,7 @@ export const api = {
   crearSesion: (nombre: string) => pedir<ResumenSesion>('/v1/sesiones', { equipo: true, cuerpo: { nombre } }),
   accion: (sid: string, pid: string, accion: 'llamar' | 'pasar' | 'lobby' | 'subir' | 'bajar') =>
     pedir<RespuestaAccion>(`/sesiones/${sid}/participantes/${pid}/${accion}`, { equipo: true }),
+  diseno: (sid: string, tipo: TipoDiseno, fijado: string | null) => pedir<RespuestaAccion>(`/sesiones/${sid}/diseno`, { equipo: true, cuerpo: { tipo, fijado } }),
   silenciar: (sid: string, pid: string, silenciado: boolean) => pedir<RespuestaAccion>(`/sesiones/${sid}/participantes/${pid}/silenciar`, { equipo: true, cuerpo: { silenciado } }),
   yo: () => pedir<{ email: string; nombre: string }>('/equipo/yo', { equipo: true, metodo: 'GET' }),
   boletoEquipo: (sid: string) => pedir<{ boleto: string }>(`/sesiones/${sid}/equipo/boleto`, { equipo: true }),

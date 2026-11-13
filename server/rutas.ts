@@ -101,6 +101,11 @@ export function crearRutas(): express.Router {
     res.json(await servicio.ponerEnEscenario(req.params.sid as string, idMiembro(req.equipo!.email), enEscenario));
   }));
 
+  r.post('/sesiones/:sid/diseno', exigirEquipo, ruta(async (req, res) => {
+    const { tipo, fijado } = z.object({ tipo: z.enum(['auto', 'foco', 'lado', 'redondas']), fijado: z.string().nullable() }).parse(req.body);
+    res.json(await servicio.ponerDiseno(req.params.sid as string, tipo, fijado));
+  }));
+
   r.post('/sesiones/:sid/terminar', exigirEquipo, ruta(async (req, res) => {
     res.json(await servicio.terminar(req.params.sid as string));
   }));

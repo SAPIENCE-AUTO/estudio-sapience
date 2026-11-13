@@ -379,6 +379,46 @@ async function main() {
       await esperar(paginas[a], JS.lugar('backstage'));
     }
 
+    // ── Diseños del escenario: los elige la consola y TODAS las pantallas los ven igual ──
+    {
+      await promover(a); await promover(b);
+      await dormir(600);
+      const ancho = (pagina: Page, testid: string, quien: string) => pagina.evaluate((id: string, q: string) => document.querySelector(`[data-testid="${id}"] [data-testid="mosaico-${q}"]`)?.getBoundingClientRect().width ?? 0, testid, quien);
+      const disenoDe = (pagina: Page, testid: string) => pagina.evaluate((id: string) => document.querySelector(`[data-testid="${id}"]`)?.getAttribute('data-diseno'), testid);
+      const todasVen = async (tipo: string) => {
+        const vistos = await Promise.all([disenoDe(consola, 'lista-escenario'), disenoDe(paginas[a], 'escenario'), disenoDe(paginas[b], 'escenario')]);
+        return vistos.every((v) => v === tipo);
+      };
+      // La ventana de diseños se queda abierta al elegir (para poder fijar a alguien enseguida): solo se abre si está cerrada.
+      const abrir = async () => { if (!(await consola.$('[data-testid="diseno-auto"]'))) await clic(consola, 'boton-diseno'); };
+      const elegir = async (tipo: string) => { await abrir(); await clic(consola, `diseno-${tipo}`); await dormir(500); };
+
+      anotar('El diseño empieza en cuadrícula automática para todos', await todasVen('auto'));
+      await elegir('foco');
+      anotar('Elegir «foco» en la consola lo cambia en todas las pantallas', await todasVen('foco'));
+      const [primero, otro] = await Promise.all([ancho(consola, 'lista-escenario', 'Marina'), ancho(consola, 'lista-escenario', a)]);
+      anotar('En foco el primero del escenario sale mucho más grande que los demás', primero > otro * 2, `${Math.round(primero)} px contra ${Math.round(otro)} px`);
+
+      // Fijar a otra persona: ahora ella va grande.
+      await abrir();
+      const valor = await consola.evaluate((nombre: string) => [...document.querySelectorAll('[data-testid="fijar"] option')].find((o) => o.textContent === nombre)?.getAttribute('value') ?? '', b);
+      await consola.select('[data-testid="fijar"]', valor);
+      await dormir(600);
+      const [grandeB, chicoA] = await Promise.all([ancho(consola, 'lista-escenario', b), ancho(consola, 'lista-escenario', a)]);
+      anotar(`Fijar a ${b}: ahora ${b} va grande`, grandeB > chicoA * 2, `${Math.round(grandeB)} px contra ${Math.round(chicoA)} px`);
+      const grandeEnSuPantalla = await Promise.all([ancho(paginas[a], 'escenario', b), ancho(paginas[a], 'escenario', 'Marina')]);
+      anotar(`Los participantes también ven a ${b} grande`, grandeEnSuPantalla[0] > grandeEnSuPantalla[1] * 2, `${Math.round(grandeEnSuPantalla[0])} px contra ${Math.round(grandeEnSuPantalla[1])} px`);
+
+      await elegir('redondas');
+      anotar('Elegir «viñetas redondas» lo cambia en todas las pantallas', await todasVen('redondas'));
+      await foto(consola, '10-consola-vinetas-redondas');
+      await elegir('lado');
+      anotar('Elegir «lado a lado» lo cambia en todas las pantallas', await todasVen('lado'));
+      await elegir('auto');
+      anotar('Regresar a automático lo cambia en todas las pantallas', await todasVen('auto'));
+      await degradar(b); await degradar(a);
+    }
+
     // ── Regresar al lobby ──
     {
       const t0 = ahora();

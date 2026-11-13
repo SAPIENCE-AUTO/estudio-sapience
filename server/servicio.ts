@@ -2,7 +2,7 @@
 // Todo lo que cambia una sesión pasa por UNA fila (una acción a la vez por sesión): así las ráfagas de clics no se pisan.
 // Cada acción trabaja sobre una copia y solo se confirma si LiveKit también respondió bien: nunca queda a medias.
 import { salaSesion } from '../compartido/tipos';
-import type { RespuestaAccion, RespuestaEntrar, RespuestaTokenEquipo } from '../compartido/tipos';
+import type { RespuestaAccion, RespuestaEntrar, RespuestaTokenEquipo, TipoDiseno } from '../compartido/tipos';
 import * as d from './dominio';
 import { guardarPronto, cargar } from './almacen';
 import { difundir } from './difusion';
@@ -110,6 +110,11 @@ export function regresarALobby(sid: string, pid: string): Promise<RespuestaAccio
     if (r.cambio) await permisosPorLugar(s, pid, 'lobby');
     return respuesta(s);
   });
+}
+
+/** El equipo elige el diseño del escenario. No toca LiveKit: solo cambia cómo se dibuja (en pantalla, y más adelante en la grabación). */
+export function ponerDiseno(sid: string, tipo: TipoDiseno, fijado: string | null): Promise<RespuestaAccion> {
+  return transaccion(sid, async (s) => { d.ponerDiseno(s, tipo, fijado); return respuesta(s); });
 }
 
 /** El equipo quita o permite el micrófono de un participante. Si no está conectado, queda guardado y vale al volver a entrar. */

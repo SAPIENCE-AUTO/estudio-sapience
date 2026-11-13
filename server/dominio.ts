@@ -1,7 +1,7 @@
 // Reglas de la sesión, sin red ni LiveKit: quién puede estar dónde y cómo se mueve.
 // Todo lo que cambia el estado sube la versión. Las acciones repetidas no cambian nada (así un doble clic no estorba).
 import { randomBytes, createHash } from 'node:crypto';
-import type { Lugar } from '../compartido/tipos';
+import { DISENO_INICIAL, type Diseno, type Lugar, type TipoDiseno } from '../compartido/tipos';
 
 export class ErrorDominio extends Error {
   constructor(public codigo: 'NO_ENCONTRADO' | 'NO_PERMITIDO' | 'SESION_TERMINADA', mensaje: string) {
@@ -31,6 +31,8 @@ export interface Miembro {
 }
 
 export interface Sesion {
+  /** Diseño del escenario. Ausente en sesiones guardadas antes de que existiera (= automático). */
+  diseno?: Diseno;
   id: string;
   nombre: string;
   /** Código del link único de los participantes. */
@@ -134,6 +136,18 @@ export function silenciar(s: Sesion, pid: string, silenciado: boolean): { cambio
   const p = participante(s, pid);
   if (!!p.silenciado === silenciado) return { cambio: false };
   p.silenciado = silenciado;
+  sube(s);
+  return { cambio: true };
+}
+
+/** El equipo elige cómo se acomoda el escenario. Se guarda en el servidor: todos lo ven igual. */
+export function ponerDiseno(s: Sesion, tipo: TipoDiseno, fijado: string | null): { cambio: boolean } {
+  viva(s);
+  if (!['auto', 'foco', 'lado', 'redondas'].includes(tipo)) throw new ErrorDominio('NO_PERMITIDO', 'Ese diseño no existe');
+  if (fijado !== null && !s.participantes[fijado] && !s.equipo[fijado]) throw new ErrorDominio('NO_ENCONTRADO', 'Esa persona no está en la sesión');
+  const actual = s.diseno ?? DISENO_INICIAL;
+  if (actual.tipo === tipo && actual.fijado === fijado) return { cambio: false };
+  s.diseno = { tipo, fijado };
   sube(s);
   return { cambio: true };
 }

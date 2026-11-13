@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Room, Track, type RemoteAudioTrack } from 'livekit-client';
-import { ArrowRightLeft, BellRing, Copy, DoorOpen, EyeOff, Mic, MicOff, Video as IconoVideo, VideoOff } from 'lucide-react';
-import type { EstadoEquipo, ParticipantePublico } from '../../compartido/tipos';
+import { ArrowRightLeft, BellRing, Copy, DoorOpen, EyeOff, LayoutGrid, Mic, MicOff, Video as IconoVideo, VideoOff } from 'lucide-react';
+import type { Diseno, EstadoEquipo, ParticipantePublico, TipoDiseno } from '../../compartido/tipos';
 import { api } from '../lib/api';
 import { useConsola, type Accion } from '../lib/useConsola';
 import { camaraDe, proteger, useCambiosDeSala } from '../lib/sala';
 import { Mosaico } from '../components/Mosaico';
-import { Lienzo } from '../components/Lienzo';
+import { Lienzo, type Viñeta } from '../components/Lienzo';
 import { useVistaPrevia } from '../lib/medios';
 import { AudioRemoto } from '../components/Video';
 
@@ -93,6 +93,66 @@ function BotonMicrofono({ p, sid, onError }: { p: ParticipantePublico; sid: stri
   );
 }
 
+const DISENOS: { tipo: TipoDiseno; nombre: string }[] = [
+  { tipo: 'auto', nombre: 'Cuadrícula automática' },
+  { tipo: 'foco', nombre: 'Foco en una persona' },
+  { tipo: 'lado', nombre: 'Lado a lado' },
+  { tipo: 'redondas', nombre: 'Viñetas redondas' },
+];
+
+/** Dibujito de cada diseño, para elegirlo de un vistazo. */
+function Miniatura({ tipo }: { tipo: TipoDiseno }) {
+  const c = 'rounded-[2px] bg-silueta';
+  return (
+    <div className="relative flex aspect-video w-full gap-[3px] rounded-md bg-video p-[3px]">
+      {tipo === 'auto' && <div className="grid flex-1 grid-cols-2 grid-rows-2 gap-[3px]">{[0, 1, 2, 3].map((i) => <div key={i} className={c} />)}</div>}
+      {tipo === 'lado' && <><div className={`flex-1 ${c}`} /><div className={`flex-1 ${c}`} /></>}
+      {tipo === 'foco' && <><div className={`flex-[3] ${c}`} /><div className="flex flex-1 flex-col gap-[3px]">{[0, 1, 2].map((i) => <div key={i} className={`flex-1 ${c}`} />)}</div></>}
+      {tipo === 'redondas' && <><div className={`flex-1 ${c}`} /><div className="absolute bottom-1 right-1 flex gap-[2px]">{[0, 1].map((i) => <div key={i} className="h-2.5 w-2.5 rounded-full border border-white bg-silueta" />)}</div></>}
+    </div>
+  );
+}
+
+/** Botón «Diseño» con su ventana: elige cómo se acomoda el escenario y a quién se pone grande. Lo ven todos igual. */
+function SelectorDiseno({ diseno, personas, onElegir }: { diseno: Diseno; personas: { id: string; nombre: string }[]; onElegir: (tipo: TipoDiseno, fijado: string | null) => void }) {
+  const [abierto, setAbierto] = useState(false);
+  const caja = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!abierto) return;
+    const fuera = (e: MouseEvent) => { if (caja.current && !caja.current.contains(e.target as Node)) setAbierto(false); };
+    document.addEventListener('mousedown', fuera);
+    return () => document.removeEventListener('mousedown', fuera);
+  }, [abierto]);
+  const actual = DISENOS.find((d) => d.tipo === diseno.tipo)?.nombre ?? '';
+  const usaFijado = diseno.tipo === 'foco' || diseno.tipo === 'redondas';
+  return (
+    <div className="relative" ref={caja}>
+      <button data-testid="boton-diseno" onClick={() => setAbierto(!abierto)} aria-expanded={abierto} className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg bg-gris-boton px-3 text-[13px] font-semibold text-teal">
+        <LayoutGrid size={14} aria-hidden="true" />Diseño: {actual}
+      </button>
+      {abierto && (
+        <div role="dialog" aria-label="Diseño del escenario" className="absolute bottom-full left-1/2 z-20 mb-2 w-[300px] -translate-x-1/2 rounded-2xl border border-borde bg-tarjeta p-3 shadow-lg">
+          <div className="grid grid-cols-2 gap-2">
+            {DISENOS.map((d) => (
+              <button key={d.tipo} data-testid={`diseno-${d.tipo}`} onClick={() => onElegir(d.tipo, diseno.fijado)}
+                className={`flex flex-col gap-1.5 rounded-xl border p-2 text-left text-[12px] font-semibold ${diseno.tipo === d.tipo ? 'border-teal bg-teal-claro' : 'border-borde'}`}>
+                <Miniatura tipo={d.tipo} />{d.nombre}
+              </button>
+            ))}
+          </div>
+          <label className={`mt-3 flex flex-col gap-1 text-[12px] font-semibold ${usaFijado ? '' : 'opacity-50'}`}>Quién va grande
+            <select data-testid="fijar" disabled={!usaFijado} value={diseno.fijado ?? ''} onChange={(e) => onElegir(diseno.tipo, e.target.value || null)} className="h-9 rounded-lg border border-borde-fuerte bg-white px-2 text-[13px] font-normal">
+              <option value="">El primero del escenario</option>
+              {personas.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+            </select>
+          </label>
+          {!usaFijado && <p className="mt-1 text-[11px] text-tenue">Solo aplica en «Foco» y «Viñetas redondas».</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PanelVerde({ p, room, yo, ejecutar }: { p: ParticipantePublico; room: Room | undefined; yo: string; ejecutar: (a: Accion, pid: string) => void }) {
   useCambiosDeSala(room ?? null);
   return (
@@ -164,18 +224,24 @@ export default function Consola() {
   const alternarEscenario = () => void api.miembroEnEscenario(sid, !enEscenario).catch(() => setAviso('No se pudo cambiar'));
 
   // Quién va en el escenario: el equipo y los participantes que subieron. El acomodo cambia solo según cuántos son.
-  const enEscena = [
-    ...estado.equipo.filter((m) => m.enEscenario).map((m) => (
-      <Mosaico key={m.id} nombre={m.nombre} esYo={m.id === yo} pista={m.id === yo ? miCamara : camaraDe(salaSesion, m.id)} espejo={m.id === yo} className="h-full w-full">
-        {m.id === yo && <ClicParaMover data-testid="ir-backstage" texto="Clic para ir a backstage" onClick={alternarEscenario} />}
-      </Mosaico>
-    )),
-    ...enPantalla.map((p) => (
-      <Mosaico key={p.id} nombre={p.nombre} pista={camaraDe(salaSesion, p.id)} className="h-full w-full">
-        <ClicParaMover data-testid={`bajar-${p.nombre}`} texto="Clic para bajar a backstage" onClick={() => ejecutar('bajar', p.id)} />
-        <BotonMicrofono p={p} sid={sid} onError={setAviso} />
-      </Mosaico>
-    )),
+  const enEscena: Viñeta[] = [
+    ...estado.equipo.filter((m) => m.enEscenario).map((m) => ({
+      id: m.id,
+      nodo: (
+        <Mosaico nombre={m.nombre} esYo={m.id === yo} pista={m.id === yo ? miCamara : camaraDe(salaSesion, m.id)} espejo={m.id === yo} className="h-full w-full">
+          {m.id === yo && <ClicParaMover data-testid="ir-backstage" texto="Clic para ir a backstage" onClick={alternarEscenario} />}
+        </Mosaico>
+      ),
+    })),
+    ...enPantalla.map((p) => ({
+      id: p.id,
+      nodo: (
+        <Mosaico nombre={p.nombre} pista={camaraDe(salaSesion, p.id)} className="h-full w-full">
+          <ClicParaMover data-testid={`bajar-${p.nombre}`} texto="Clic para bajar a backstage" onClick={() => ejecutar('bajar', p.id)} />
+          <BotonMicrofono p={p} sid={sid} onError={setAviso} />
+        </Mosaico>
+      ),
+    })),
   ];
 
   return (
@@ -201,11 +267,13 @@ export default function Consola() {
         <div className="grid shrink-0 grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
           <section className="flex min-w-0 flex-col gap-3">
             <div className="mx-auto w-full" style={{ maxWidth: 'calc((100vh - 400px) * 16 / 9)', minWidth: 360 }}>
-              <Lienzo data-testid="lista-escenario" items={enEscena} vacio="Nadie en el escenario" />
+              <Lienzo data-testid="lista-escenario" items={enEscena} diseno={estado.diseno} vacio="Nadie en el escenario" />
             </div>
             <div className="flex flex-wrap items-center justify-center gap-2" data-testid="controles">
               <BotonControl data-testid="boton-mic" activo={micOn} encendido={{ icono: <Mic size={22} aria-hidden="true" />, texto: 'Silenciar mi micrófono' }} apagado={{ icono: <MicOff size={22} aria-hidden="true" />, texto: 'Activar mi micrófono' }} onClick={() => setMicOn(!micOn)} />
               <BotonControl data-testid="boton-cam" activo={camOn} encendido={{ icono: <IconoVideo size={22} aria-hidden="true" />, texto: 'Apagar mi cámara' }} apagado={{ icono: <VideoOff size={22} aria-hidden="true" />, texto: 'Encender mi cámara' }} onClick={() => setCamOn(!camOn)} />
+              <SelectorDiseno diseno={estado.diseno} personas={enEscena.map((v) => ({ id: v.id, nombre: estado.equipo.find((m) => m.id === v.id)?.nombre ?? participantes.find((p) => p.id === v.id)?.nombre ?? '' }))}
+                onElegir={(tipo, fijado) => void api.diseno(sid, tipo, fijado).catch(() => setAviso('No se pudo cambiar el diseño'))} />
               <Boton data-testid="mi-escenario" onClick={alternarEscenario}>
                 <span className="inline-flex items-center gap-1.5"><ArrowRightLeft size={14} aria-hidden="true" />{enEscenario ? 'Ir a backstage' : 'Subirme al escenario'}</span>
               </Boton>

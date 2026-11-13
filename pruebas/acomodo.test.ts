@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { acomodo, columnasPara } from '../src/lib/acomodo';
+import { acomodo, columnasPara, ordenar } from '../src/lib/acomodo';
 
 describe('acomodo del escenario', () => {
   it('sin gente no hay filas', () => {
@@ -34,5 +34,26 @@ describe('acomodo del escenario', () => {
       for (let i = 1; i < filas.length; i++) expect(filas[i]).toBeLessThanOrEqual(filas[i - 1]!);
       expect(filas[0]! - filas[filas.length - 1]!).toBeLessThanOrEqual(1);
     }
+  });
+});
+
+describe('orden según el diseño', () => {
+  const gente = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+  it('en foco y viñetas redondas la persona fijada va primero y las demás conservan su orden', () => {
+    expect(ordenar(gente, { tipo: 'foco', fijado: 'c' }).map((p) => p.id)).toEqual(['c', 'a', 'b']);
+    expect(ordenar(gente, { tipo: 'redondas', fijado: 'b' }).map((p) => p.id)).toEqual(['b', 'a', 'c']);
+  });
+  it('si la fijada no está en el escenario, o no hay fijada, se queda el orden de siempre', () => {
+    expect(ordenar(gente, { tipo: 'foco', fijado: 'z' }).map((p) => p.id)).toEqual(['a', 'b', 'c']);
+    expect(ordenar(gente, { tipo: 'foco', fijado: null }).map((p) => p.id)).toEqual(['a', 'b', 'c']);
+  });
+  it('en automático y lado a lado no se mueve a nadie aunque haya una fijada', () => {
+    expect(ordenar(gente, { tipo: 'auto', fijado: 'c' }).map((p) => p.id)).toEqual(['a', 'b', 'c']);
+    expect(ordenar(gente, { tipo: 'lado', fijado: 'c' }).map((p) => p.id)).toEqual(['a', 'b', 'c']);
+  });
+  it('no modifica la lista original', () => {
+    const copia = [...gente];
+    ordenar(gente, { tipo: 'foco', fijado: 'c' });
+    expect(gente).toEqual(copia);
   });
 });
