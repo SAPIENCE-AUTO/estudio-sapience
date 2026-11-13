@@ -17,6 +17,8 @@ const esquema = z.object({
   // Correos del equipo que pueden entrar, separados por coma, espacio o salto de línea.
   EQUIPO_PERMITIDO: z.string().default(''),
   HUB_API_KEY: z.string().default(''),
+  // Base de datos donde se guardan las sesiones (la del proyecto de Supabase de Talks). Vacía = archivo local, solo para desarrollo.
+  DATABASE_URL: z.string().default('').transform((s) => s.trim()),
   // Cuánto espera el servidor a que vuelva alguien que se desconectó antes de regresarlo al lobby (las redes flojas se reconectan solas).
   GRACIA_DESCONEXION_SEGUNDOS: z.coerce.number().min(1).default(30),
   NODE_ENV: z.string().default('development'),
@@ -52,4 +54,8 @@ if (config.AUTH_MODE === 'supabase') {
 if (config.NODE_ENV === 'production' && !config.URL_PUBLICA.startsWith('https://')) {
   console.error('URL_PUBLICA debe empezar con https:// en producción.');
   process.exit(1);
+}
+
+if (config.NODE_ENV === 'production' && !config.DATABASE_URL) {
+  console.warn('AVISO: sin DATABASE_URL las sesiones se guardan en un archivo y SE PIERDEN cuando Render reinicia o actualiza el servicio.');
 }

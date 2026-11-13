@@ -78,6 +78,12 @@ setInterval(() => {
   }
 }, 15000);
 
+await servicio.iniciar(); // carga las sesiones guardadas ANTES de aceptar a nadie
+
+for (const senal of ['SIGTERM', 'SIGINT'] as const) {
+  process.once(senal, () => { void servicio.cerrar().catch((e) => console.error('No se pudo guardar al apagar:', e)).finally(() => process.exit(0)); });
+}
+
 servidor.listen(config.PORT, () => {
   console.log(`Talks: servidor en http://localhost:${config.PORT} (acceso del equipo: ${config.AUTH_MODE})`);
 });

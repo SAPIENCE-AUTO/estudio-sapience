@@ -244,6 +244,12 @@ export default function Consola() {
       .catch(() => { disenoPedido.current = estado?.diseno ?? null; setAviso('No se pudo cambiar el diseño'); })
       .finally(() => { disenosEnVuelo.current -= 1; });
   };
+  // La vista es PERSONAL (cada quien en su navegador): Moderación conduce la sesión, Producción cuida lo que se ve y se graba.
+  const [vista, setVistaEstado] = useState<'moderacion' | 'produccion'>(() => {
+    try { return localStorage.getItem('talks:vista') === 'produccion' ? 'produccion' : 'moderacion'; } catch { return 'moderacion'; }
+  });
+  const setVista = (v: 'moderacion' | 'produccion') => { setVistaEstado(v); try { localStorage.setItem('talks:vista', v); } catch { /* sin almacenamiento: no se recuerda */ } };
+  const produccion = vista === 'produccion';
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
   const [ahora, setAhora] = useState(Date.now());
@@ -310,8 +316,8 @@ export default function Consola() {
       nodo: (
         <Mosaico nombre={p.nombre} pista={camaraDe(salaSesion, p.id)} className="h-full w-full">
           {!p.conectado && <><Velo /><SinConexion /></>}
-          <ClicParaMover data-testid={`bajar-${p.nombre}`} texto="Clic para bajar a backstage" onClick={() => ejecutar('bajar', p.id)} />
-          <BotonMicrofono p={p} sid={sid} onError={setAviso} />
+          {!produccion && <ClicParaMover data-testid={`bajar-${p.nombre}`} texto="Clic para bajar a backstage" onClick={() => ejecutar('bajar', p.id)} />}
+          {!produccion && <BotonMicrofono p={p} sid={sid} onError={setAviso} />}
         </Mosaico>
       ),
     })),
@@ -327,6 +333,12 @@ export default function Consola() {
           {enVerde.length > 0 && <Indicador tono="sala" icono={DoorOpen} data-testid="indicador-verde">{enVerde.length} en la sala verde</Indicador>}
         </div>
         <div className="flex items-center gap-2">
+          <div role="group" aria-label="Vista" className="inline-flex rounded-lg bg-gris-boton p-0.5">
+            {([['moderacion', 'Moderación'], ['produccion', 'Producción']] as const).map(([v, nombre]) => (
+              <button key={v} data-testid={`vista-${v}`} aria-pressed={vista === v} onClick={() => setVista(v)}
+                className={`h-8 rounded-md px-3 text-[13px] font-semibold ${vista === v ? 'bg-teal text-white' : 'text-teal'}`}>{nombre}</button>
+            ))}
+          </div>
           <Boton onClick={() => void navigator.clipboard?.writeText(`${location.origin}/p/${estado.sesion.codigo}`).then(() => setAviso('Link de participantes copiado'))} data-testid="copiar-link">
             <span className="inline-flex items-center gap-1.5"><Copy size={14} />Link de participantes</span>
           </Boton>
@@ -358,14 +370,16 @@ export default function Consola() {
                   <div key={p.id} className="flex w-52 flex-col gap-1.5" data-testid={`tarjeta-backstage-${p.nombre}`}>
                     <Mosaico nombre={p.nombre} pista={camaraDe(salaSesion, p.id)} className="aspect-video rounded-xl">
                       <Velo />
-                      <ClicParaMover data-testid={`subir-${p.nombre}`} texto="Clic para subir al escenario" onClick={() => ejecutar('subir', p.id)} />
-                      <BotonMicrofono p={p} sid={sid} onError={setAviso} />
+                      {!produccion && <ClicParaMover data-testid={`subir-${p.nombre}`} texto="Clic para subir al escenario" onClick={() => ejecutar('subir', p.id)} />}
+                      {!produccion && <BotonMicrofono p={p} sid={sid} onError={setAviso} />}
                       {!p.conectado && <SinConexion />}
                     </Mosaico>
-                    <div className="flex gap-1.5">
-                      <Boton data-testid={`verde-${p.nombre}`} className="flex-1" onClick={() => ejecutar('llamar', p.id)} title="Regresar a la sala verde">Sala verde</Boton>
-                      <Boton data-testid={`lobby-${p.nombre}`} className="flex-1" onClick={() => ejecutar('lobby', p.id)} title="Regresar al lobby">Lobby</Boton>
-                    </div>
+                    {!produccion && (
+                      <div className="flex gap-1.5">
+                        <Boton data-testid={`verde-${p.nombre}`} className="flex-1" onClick={() => ejecutar('llamar', p.id)} title="Regresar a la sala verde">Sala verde</Boton>
+                        <Boton data-testid={`lobby-${p.nombre}`} className="flex-1" onClick={() => ejecutar('lobby', p.id)} title="Regresar al lobby">Lobby</Boton>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -384,29 +398,43 @@ export default function Consola() {
           </section>
 
           <aside className="flex min-h-0 flex-col gap-3">
-            <Tarjeta titulo="Lobby" cuenta={delLobby.length} aviso={delLobby.length > 0 ? <Indicador tono="atencion" icono={BellRing}>Esperan</Indicador> : undefined}>
-              <ul className="flex flex-col gap-2" data-testid="lista-lobby">
-                {delLobby.length === 0 && <li className="text-[13px] text-tenue">Nadie esperando</li>}
-                {delLobby.map((p) => (
-                  <li key={p.id} data-testid={`fila-lobby-${p.nombre}`} className="flex items-center justify-between gap-2">
-                    <div className="flex min-w-0 flex-col">
-                      <span className="truncate text-[13px] font-medium">{p.nombre}</span>
-                      <span className="text-[11px] text-tenue">{p.conectado ? `hace ${minutos(p.entroEn, ahora)} min` : 'Sin conexión'}</span>
-                    </div>
-                    <Boton principal data-testid={`llamar-${p.nombre}`} disabled={!p.conectado} onClick={() => ejecutar('llamar', p.id)}>Llamar</Boton>
-                  </li>
-                ))}
-              </ul>
-            </Tarjeta>
+            {!produccion && (
+              <>
+              <Tarjeta titulo="Lobby" cuenta={delLobby.length} aviso={delLobby.length > 0 ? <Indicador tono="atencion" icono={BellRing}>Esperan</Indicador> : undefined}>
+                <ul className="flex flex-col gap-2" data-testid="lista-lobby">
+                  {delLobby.length === 0 && <li className="text-[13px] text-tenue">Nadie esperando</li>}
+                  {delLobby.map((p) => (
+                    <li key={p.id} data-testid={`fila-lobby-${p.nombre}`} className="flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 flex-col">
+                        <span className="truncate text-[13px] font-medium">{p.nombre}</span>
+                        <span className="text-[11px] text-tenue">{p.conectado ? `hace ${minutos(p.entroEn, ahora)} min` : 'Sin conexión'}</span>
+                      </div>
+                      <Boton principal data-testid={`llamar-${p.nombre}`} disabled={!p.conectado} onClick={() => ejecutar('llamar', p.id)}>Llamar</Boton>
+                    </li>
+                  ))}
+                </ul>
+              </Tarjeta>
 
-            <Tarjeta titulo="Sala verde" cuenta={enVerde.length} aviso={enVerde.length > 0 ? <Indicador tono="sala" icono={DoorOpen}>Adentro</Indicador> : undefined}>
-              <div className="flex flex-col gap-4" data-testid="lista-verde">
-                {enVerde.length === 0 && <p className="text-[13px] text-tenue">Nadie en la sala verde</p>}
-                {enVerde.map((p) => <PanelVerde key={p.id} p={p} room={salaSesion ?? undefined} yo={yo} ejecutar={ejecutar} />)}
-                {enVerde.some((p) => p.verdeCon !== yo) && <p className="text-[12px] text-tenue">{`Con ${nombreEquipo(enVerde.find((p) => p.verdeCon !== yo)?.verdeCon ?? null)}`}</p>}
-              </div>
-            </Tarjeta>
-            <ChatConsola sid={sid} mensajes={estado.mensajes} yo={yo} config={estado.chat} onError={setAviso}
+              <Tarjeta titulo="Sala verde" cuenta={enVerde.length} aviso={enVerde.length > 0 ? <Indicador tono="sala" icono={DoorOpen}>Adentro</Indicador> : undefined}>
+                <div className="flex flex-col gap-4" data-testid="lista-verde">
+                  {enVerde.length === 0 && <p className="text-[13px] text-tenue">Nadie en la sala verde</p>}
+                  {enVerde.map((p) => <PanelVerde key={p.id} p={p} room={salaSesion ?? undefined} yo={yo} ejecutar={ejecutar} />)}
+                  {enVerde.some((p) => p.verdeCon !== yo) && <p className="text-[12px] text-tenue">{`Con ${nombreEquipo(enVerde.find((p) => p.verdeCon !== yo)?.verdeCon ?? null)}`}</p>}
+                </div>
+              </Tarjeta>
+              </>
+            )}
+            {produccion && (
+              <Tarjeta titulo="Gente" data-testid="resumen-gente">
+                <ul className="flex flex-col gap-2 text-[13px]">
+                  <li className="flex flex-col gap-0.5"><span className="inline-flex items-center gap-1.5 font-semibold">{delLobby.length > 0 ? <Indicador tono="atencion" icono={BellRing}>{delLobby.length} en el lobby</Indicador> : <span className="text-tenue">Lobby: nadie</span>}</span>{delLobby.length > 0 && <span className="text-tenue">{delLobby.map((p) => p.nombre).join(', ')}</span>}</li>
+                  <li className="flex flex-col gap-0.5"><span className="inline-flex items-center gap-1.5 font-semibold">{enVerde.length > 0 ? <Indicador tono="sala" icono={DoorOpen}>{enVerde.length} en la sala verde</Indicador> : <span className="text-tenue">Sala verde: nadie</span>}</span>{enVerde.length > 0 && <span className="text-tenue">{enVerde.map((p) => p.nombre).join(', ')}</span>}</li>
+                  <li className="font-semibold">{enBackstage.length} en backstage, {enPantalla.length + estado.equipo.filter((m) => m.enEscenario).length} en el escenario</li>
+                </ul>
+                <p className="mt-2 text-[11px] text-tenue">A la gente la mueve quien modera. Desde Moderación puedes llamar, subir y bajar.</p>
+              </Tarjeta>
+            )}
+            <ChatConsola key={vista} canalInicial={produccion ? 'equipo' : 'sesion'} sid={sid} mensajes={estado.mensajes} yo={yo} config={estado.chat} onError={setAviso}
               personasSesion={participantes.filter((p) => p.lugar === 'backstage' || p.lugar === 'escenario').map((p) => ({ id: p.id, nombre: p.nombre }))}
               personasVerde={enVerde.map((p) => ({ id: p.id, nombre: p.nombre }))} />
           </aside>

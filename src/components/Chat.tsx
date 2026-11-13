@@ -6,11 +6,12 @@ import { api } from '../lib/api';
 /** Cuántos mensajes de otros llegaron después de la última vez que se miró ese chat. */
 const sinLeer = (mensajes: MensajePublico[], yo: string, visto: number) => mensajes.filter((m) => m.en > visto && m.deId !== yo).length;
 
-function Nuevos({ cuantos }: { cuantos: number }) {
+function Nuevos({ cuantos, compacto }: { cuantos: number; compacto?: boolean }) {
   if (cuantos <= 0) return null;
+  const texto = cuantos === 1 ? '1 nuevo' : `${cuantos} nuevos`;
   return (
-    <span data-testid="chat-nuevos" className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg bg-atencion px-2 py-0.5 text-[11px] font-semibold text-white">
-      <MessageCircle size={11} aria-hidden="true" />{cuantos === 1 ? '1 nuevo' : `${cuantos} nuevos`}
+    <span data-testid="chat-nuevos" title={texto} aria-label={texto} className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg bg-atencion px-2 py-0.5 text-[11px] font-semibold text-white">
+      <MessageCircle size={11} aria-hidden="true" />{compacto ? cuantos : texto}
     </span>
   );
 }
@@ -51,8 +52,10 @@ function Interruptor({ activo, onCambiar, etiqueta, estado, ...resto }: { activo
 const hora = (en: number) => new Date(en).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
 
 /** Chat de la consola: tres pestañas, una por lugar. Sesión (con los participantes de adentro), Sala verde (con quien estás revisando) y Equipo (interno). */
-export function ChatConsola({ sid, mensajes, yo, personasSesion, personasVerde, config, onError }: {
+export function ChatConsola({ sid, mensajes, yo, personasSesion, personasVerde, config, onError, canalInicial = 'sesion' }: {
   sid: string;
+  /** Pestaña con la que abre (la vista de producción abre en «Equipo»). */
+  canalInicial?: CanalChat;
   mensajes: MensajePublico[];
   /** Id del miembro del equipo que está viendo la consola. */
   yo: string;
@@ -63,7 +66,7 @@ export function ChatConsola({ sid, mensajes, yo, personasSesion, personasVerde, 
   config: ConfigChat;
   onError: (m: string) => void;
 }) {
-  const [canal, setCanal] = useState<CanalChat>('sesion');
+  const [canal, setCanal] = useState<CanalChat>(canalInicial);
   const [visto, setVisto] = useState<Record<CanalChat, number>>({ sesion: 0, verde: 0, equipo: 0 });
   const [paraSesion, setParaSesion] = useState('todos');
   const [paraVerde, setParaVerde] = useState('');
@@ -94,8 +97,8 @@ export function ChatConsola({ sid, mensajes, yo, personasSesion, personasVerde, 
   const cambiarConfig = (parche: Partial<ConfigChat>) => void api.chatConfig(sid, { ...config, ...parche }).catch(() => onError('No se pudo cambiar el chat'));
   const pestana = (c: CanalChat, nombre: string) => (
     <button data-testid={`chat-tab-${c}`} onClick={() => setCanal(c)} aria-pressed={canal === c}
-      className={`flex h-9 flex-1 items-center justify-center gap-1 rounded-lg px-1.5 text-[12px] font-semibold ${canal === c ? 'bg-teal text-white' : 'bg-gris-boton text-teal'}`}>
-      {nombre}{canal !== c && <Nuevos cuantos={sinLeer(delCanal[c], yo, visto[c])} />}
+      className={`flex h-9 min-w-0 flex-1 items-center justify-center gap-1 rounded-lg px-1.5 text-[12px] font-semibold ${canal === c ? 'bg-teal text-white' : 'bg-gris-boton text-teal'}`}>
+      {nombre}{canal !== c && <Nuevos compacto cuantos={sinLeer(delCanal[c], yo, visto[c])} />}
     </button>
   );
   const opcion = (activa: boolean) => `flex-1 rounded-lg border px-2 py-1.5 text-[12px] font-semibold ${activa ? 'border-teal bg-teal-claro text-teal' : 'border-borde text-texto'}`;

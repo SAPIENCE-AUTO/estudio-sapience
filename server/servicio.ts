@@ -4,13 +4,16 @@
 import { salaSesion } from '../compartido/tipos';
 import type { RespuestaAccion, RespuestaEntrar, RespuestaTokenEquipo, CanalChat, ConfigChat, Diseno } from '../compartido/tipos';
 import * as d from './dominio';
-import { guardarPronto, cargar } from './almacen';
+import { almacenArchivo, almacenPostgres, type Almacen } from './almacen';
+import { crearPool } from './baseDeDatos';
 import { difundir } from './difusion';
 import { firmarPase } from './auth';
 import * as lk from './livekit';
 import { config } from './config';
 
-const sesiones: Record<string, d.Sesion> = cargar();
+const sesiones: Record<string, d.Sesion> = {};
+let almacen: Almacen = almacenArchivo();
+const guardarPronto = (s: Record<string, d.Sesion>) => almacen.guardarPronto(s);
 const filas = new Map<string, Promise<unknown>>();
 
 function enFila<T>(sid: string, accion: () => Promise<T>): Promise<T> {
@@ -207,10 +210,24 @@ export function conexion(sid: string, quien: { participanteId?: string; equipoId
   return transaccion(sid, async (s) => { d.marcarConexion(s, quien, conectado); });
 }
 
-// Tras reiniciar el servidor nadie está conectado todavía: quien estaba adentro tiene el mismo plazo para volver.
-for (const s of Object.values(sesiones)) {
-  if (s.terminada) continue;
-  for (const p of Object.values(s.participantes)) if (p.lugar !== 'lobby' && !p.conectado) vigilarAusencia(s.id, p.id);
+/**
+ * Arranque: elige dónde se guardan las sesiones (Postgres si hay DATABASE_URL, si no un archivo local), las carga y reanuda los plazos.
+ * Tras reiniciar el servidor nadie está conectado todavía: quien estaba adentro tiene el mismo plazo para volver.
+ */
+export async function iniciar(elegido?: Almacen): Promise<void> {
+  almacen = elegido ?? (config.DATABASE_URL ? almacenPostgres(crearPool(config.DATABASE_URL)) : almacenArchivo());
+  Object.assign(sesiones, await almacen.cargar());
+  for (const s of Object.values(sesiones)) {
+    if (s.terminada) continue;
+    for (const p of Object.values(s.participantes)) if (p.lugar !== 'lobby' && !p.conectado) vigilarAusencia(s.id, p.id);
+  }
+  console.log(`Talks: ${Object.keys(sesiones).length} sesiones cargadas (${config.DATABASE_URL && !elegido ? 'Postgres' : 'archivo local'})`);
+}
+
+/** Al apagar el servidor (Render manda una señal en cada actualización): termina de guardar lo pendiente. */
+export async function cerrar(): Promise<void> {
+  for (const t of gracia.values()) clearTimeout(t);
+  await almacen.vaciar();
 }
 
 export function terminar(sid: string): Promise<RespuestaAccion> {

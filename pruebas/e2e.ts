@@ -567,6 +567,24 @@ async function main() {
       await foto(consola, '13-consola-con-chat'); await foto(paginas[a], '14-participante-con-chat');
     }
 
+    // ── Vistas personales: Moderación conduce, Producción cuida lo que se ve (y no mueve a la gente) ──
+    {
+      const hay = async (sel: string) => !!(await consola.$(sel));
+      await clic(consola, 'vista-produccion'); await dormir(500);
+      anotar('En Producción el chat abre en «Equipo»', Boolean(await consola.evaluate(() => document.querySelector('[data-testid="chat-tab-equipo"]')?.getAttribute('aria-pressed') === 'true')));
+      anotar('En Producción el lobby y la sala verde se reemplazan por un resumen de la gente', !(await hay('[data-testid="lista-lobby"]')) && !(await hay('[data-testid="lista-verde"]')) && (await hay('[data-testid="resumen-gente"]')));
+      anotar('En Producción las viñetas de la gente son solo de ver (sin subir, bajar, silenciar ni mover)',
+        !(await hay('[data-testid^="subir-"]')) && !(await hay('[data-testid^="bajar-"]')) && !(await hay('[data-testid^="silenciar-"]')) && !(await hay('[data-testid^="lobby-"]')) && !(await hay('[data-testid^="verde-"]')));
+      anotar('En Producción siguen el escenario, el backstage con su gente y el selector de diseño', (await hay('[data-testid="lista-escenario"]')) && (await hay('[data-testid="backstage"] [data-testid^="mosaico-"]')) && (await hay('[data-testid="boton-diseno"]')));
+      await foto(consola, '15-consola-produccion');
+      await consola.reload();
+      await esperar(consola, JS.hay('[data-testid="consola"]'));
+      await dormir(1500);
+      anotar('La vista elegida se recuerda al recargar', Boolean(await consola.evaluate(() => document.querySelector('[data-testid="vista-produccion"]')?.getAttribute('aria-pressed') === 'true')));
+      await clic(consola, 'vista-moderacion'); await dormir(500);
+      anotar('Al volver a Moderación regresan el lobby, la sala verde y las acciones sobre la gente', (await hay('[data-testid="lista-lobby"]')) && (await hay('[data-testid="lista-verde"]')) && (await hay('[data-testid^="subir-"]')) && (await hay('[data-testid^="lobby-"]')));
+    }
+
     // ── Regresar al lobby ──
     {
       const t0 = ahora();

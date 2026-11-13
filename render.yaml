@@ -21,6 +21,10 @@ services:
       # Firma los pases de los participantes: Render la genera una vez y la conserva.
       - key: APP_SECRET
         generateValue: true
+      # Base de datos de Talks (el proyecto de Supabase propio, NO el del Hub): ahí se guardan las sesiones para que un reinicio no las borre.
+      # Usa la dirección «Session pooler» (puerto 5432) de Supabase: Render no alcanza la conexión directa.
+      - key: DATABASE_URL
+        sync: false
       # Cuenta de LiveKit propia de Talks.
       - key: LIVEKIT_WS_URL
         sync: false
