@@ -124,6 +124,14 @@ export function crearRutas(): express.Router {
     res.json(await servicio.ponerEnEscenario(req.params.sid as string, idMiembro(req.equipo!.email), enEscenario));
   }));
 
+  // Highlights: un clic marca el momento; el título se pone a mano (después, con IA); se pueden borrar.
+  r.post('/sesiones/:sid/highlights', exigirEquipo, ruta(async (req: ConEquipo, res) => { res.json(await servicio.marcarHighlight(req.params.sid as string, idMiembro(req.equipo!.email))); }));
+  r.post('/sesiones/:sid/highlights/:id/titulo', exigirEquipo, ruta(async (req, res) => {
+    const { titulo } = z.object({ titulo: z.string().max(400) }).parse(req.body);
+    res.json(await servicio.titularHighlight(req.params.sid as string, req.params.id as string, titulo));
+  }));
+  r.post('/sesiones/:sid/highlights/:id/borrar', exigirEquipo, ruta(async (req, res) => { res.json(await servicio.borrarHighlight(req.params.sid as string, req.params.id as string)); }));
+
   // EN VIVO: empezar y terminar la transmisión a la sala de observación (Mux).
   r.post('/sesiones/:sid/envivo/iniciar', exigirEquipo, ruta(async (req, res) => { res.json(await servicio.iniciarEnVivo(req.params.sid as string)); }));
   r.post('/sesiones/:sid/envivo/detener', exigirEquipo, ruta(async (req, res) => { res.json(await servicio.detenerEnVivo(req.params.sid as string)); }));

@@ -669,6 +669,57 @@ async function main() {
       await degradar(a);
     }
 
+    // ── Highlights: un clic marca el momento, se titula a mano, se borra y se exporta; solo el equipo los ve ──
+    {
+      const aceptar = (d: { accept: () => Promise<void> }) => void d.accept().catch(() => undefined);
+      consola.on('dialog', aceptar);
+      const lista = () => consola.evaluate("[...document.querySelectorAll('[data-testid=\"panel-highlights\"] [data-testid=\"highlight\"]')].map((e) => ({ minuto: (e.querySelector('[data-testid=\"highlight-minuto\"]') || {}).textContent, titulo: (e.querySelector('[data-testid=\"highlight-titulo\"]') || {}).value }))") as Promise<{ minuto: string; titulo: string }[]>;
+      const cuenta = async () => (await lista()).length;
+      const esperarCuenta = async (n: number) => { for (let i = 0; i < 50 && (await cuenta()) !== n; i++) await dormir(100); return (await cuenta()) === n; };
+      const base = await cuenta();
+
+      await clic(consola, 'boton-highlight'); await dormir(300); await clic(consola, 'boton-highlight');
+      anotar('Un clic en «Highlight» marca el momento y aparece en la lista', await esperarCuenta(base + 2));
+      const primero = (await lista())[0]!;
+      anotar('Sin estar al aire dice que se marcó «sin EN VIVO» y guarda la hora', /^\d{2}:\d{2}:\d{2}$/.test(primero.minuto), primero.minuto);
+
+      await consola.evaluate("document.activeElement && document.activeElement.blur()");
+      await consola.keyboard.press('h');
+      anotar('La tecla H también marca el momento', await esperarCuenta(base + 3));
+      await consola.click('[data-testid="chat-texto"]');
+      await consola.keyboard.type('hola, hay que hablar de la H');
+      await dormir(500);
+      anotar('Escribiendo en un cuadro de texto, la H es una letra y no marca nada', (await cuenta()) === base + 3);
+      await consola.evaluate("document.activeElement && document.activeElement.blur()");
+
+      // Título a mano: se guarda al terminar y sobrevive a recargar.
+      await consola.click('[data-testid="panel-highlights"] [data-testid="highlight-titulo"]');
+      await consola.keyboard.type('Cita sobre el precio');
+      await consola.keyboard.press('Enter');
+      await dormir(800);
+      await consola.reload();
+      await esperar(consola, JS.hay('[data-testid="consola"]'));
+      await dormir(1500);
+      anotar('El título puesto a mano se guarda y sigue ahí al recargar', (await lista()).some((h) => h.titulo === 'Cita sobre el precio'));
+
+      // Los participantes NUNCA ven los highlights, ni su título.
+      const pantallas = await Promise.all([a, b, c].map((n) => paginas[n].evaluate(() => document.body.innerText)));
+      anotar('Ningún participante ve los highlights ni sus títulos', pantallas.every((t) => !t.includes('Cita sobre el precio') && !t.includes('Highlight')));
+
+      // Exportar: se captura el archivo que se descargaría.
+      await consola.evaluate("window.__csv = ''; window.__bom = false; const original = URL.createObjectURL.bind(URL); URL.createObjectURL = (blob) => { blob.arrayBuffer().then((b) => { const u = new Uint8Array(b); window.__bom = u[0] === 239 && u[1] === 187 && u[2] === 191; window.__csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode(b); }); return original(blob); };");
+      await clic(consola, 'highlights-exportar');
+      for (let i = 0; i < 30 && !(await consola.evaluate("window.__csv")); i++) await dormir(100);
+      const csv = String(await consola.evaluate("window.__csv"));
+      const conMarca = Boolean(await consola.evaluate('window.__bom'));
+      anotar('Exportar baja un CSV con la marca de Excel, encabezados, los títulos y quién marcó', conMarca && csv.replace(/^\ufeff/, '').startsWith('Número,Minuto de la grabación,Hora,Título,Marcó') && csv.includes('Cita sobre el precio') && csv.includes('Marina'), `${csv.split('\r\n').length - 1} filas, marca ${conMarca}`);
+
+      // Borrar.
+      await clic(consola, 'highlight-borrar');
+      anotar('Borrar quita ese highlight', await esperarCuenta(base + 2));
+      consola.off('dialog', aceptar);
+    }
+
     // ── Regresar al lobby ──
     {
       const t0 = ahora();

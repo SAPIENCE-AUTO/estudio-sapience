@@ -131,6 +131,17 @@ export function mensajeDeParticipante(sid: string, pid: string, texto: string): 
   return transaccion(sid, async (s) => { d.mensajeDeParticipante(s, pid, texto); return respuesta(s); });
 }
 
+// ---------- highlights ----------
+export function marcarHighlight(sid: string, equipoId: string): Promise<RespuestaAccion> {
+  return transaccion(sid, async (s) => { d.marcarHighlight(s, equipoId); return respuesta(s); });
+}
+export function titularHighlight(sid: string, id: string, titulo: string): Promise<RespuestaAccion> {
+  return transaccion(sid, async (s) => { d.titularHighlight(s, id, titulo); return respuesta(s); });
+}
+export function borrarHighlight(sid: string, id: string): Promise<RespuestaAccion> {
+  return transaccion(sid, async (s) => { d.borrarHighlight(s, id); return respuesta(s); });
+}
+
 // ---------- EN VIVO ----------
 const iniciando = new Set<string>();
 

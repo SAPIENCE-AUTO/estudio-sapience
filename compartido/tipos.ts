@@ -48,6 +48,18 @@ export interface MensajePublico {
 }
 export const MAX_TEXTO_CHAT = 500;
 
+/** Un momento marcado por el equipo. Solo lo ve el equipo: los participantes nunca lo reciben. */
+export interface HighlightPublico {
+  id: string;
+  /** Cuándo se marcó (hora del servidor, en milisegundos). */
+  en: number;
+  /** Cuándo empezó el EN VIVO al que pertenece (la grabación cuenta desde ahí); null si se marcó sin estar al aire. */
+  vivoDesde: number | null;
+  titulo: string;
+  porNombre: string;
+}
+export const MAX_TITULO_HIGHLIGHT = 120;
+
 /** La sesión se está transmitiendo (y Mux la graba). Lo ve el equipo y también los participantes: tienen derecho a saberlo. */
 export interface EnVivo { desde: number }
 
@@ -87,6 +99,7 @@ export interface EstadoEquipo {
   chat: ConfigChat;
   mensajes: MensajePublico[];
   envivo: EnVivo | null;
+  highlights: HighlightPublico[];
   /** «lista»: hay una llave de Mux para transmitir. «sin-llave»: falta (el Hub la manda al crear la sesión). La llave NUNCA viaja. */
   transmision: 'lista' | 'sin-llave';
 }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Room, Track, type RemoteAudioTrack } from 'livekit-client';
-import { ArrowRightLeft, BellRing, Radio, Copy, DoorOpen, EyeOff, LayoutGrid, Mic, MicOff, Video as IconoVideo, VideoOff, WifiOff, X } from 'lucide-react';
+import { ArrowRightLeft, BellRing, Radio, Star, Copy, DoorOpen, EyeOff, LayoutGrid, Mic, MicOff, Video as IconoVideo, VideoOff, WifiOff, X } from 'lucide-react';
 import type { AjusteDiseno, Diseno, EstadoEquipo, FondoDiseno, FormaDiseno, ParticipantePublico, TipoDiseno } from '../../compartido/tipos';
 import { tieneFoco } from '../lib/acomodo';
 import { api } from '../lib/api';
@@ -10,6 +10,8 @@ import { camaraDe, proteger, useCambiosDeSala } from '../lib/sala';
 import { Mosaico } from '../components/Mosaico';
 import { Lienzo, type Viñeta } from '../components/Lienzo';
 import { ChatConsola } from '../components/Chat';
+import { PanelHighlights } from '../components/Highlights';
+import { duracion } from '../lib/tiempo';
 import { useVistaPrevia } from '../lib/medios';
 import { AudioRemoto } from '../components/Video';
 
@@ -38,11 +40,6 @@ function sonidosDe(room: Room | null): RemoteAudioTrack[] {
   return room ? ([...room.remoteParticipants.values()].map((p) => p.getTrackPublication(Track.Source.Microphone)?.track).filter(Boolean) as RemoteAudioTrack[]) : [];
 }
 
-/** 00:12:40 */
-const duracion = (ms: number) => {
-  const t = Math.max(0, Math.floor(ms / 1000));
-  return [Math.floor(t / 3600), Math.floor((t % 3600) / 60), t % 60].map((n) => String(n).padStart(2, '0')).join(':');
-};
 const minutos = (desde: number, ahora: number) => Math.max(0, Math.floor((ahora - desde) / 60000));
 
 // ───────── Piezas de la pantalla ─────────
@@ -275,6 +272,21 @@ export default function Consola() {
     } catch (e) { setAviso(e instanceof Error ? e.message : 'No se pudo cambiar la transmisión'); }
     finally { setEmpezandoVivo(false); }
   };
+  // Highlight: un clic (o la tecla H) marca el momento; se titula después.
+  const marcarMomento = () => void api.marcarHighlight(sid).catch((e) => setAviso(e instanceof Error ? e.message : 'No se pudo marcar el momento'));
+  const marcarRef = useRef(marcarMomento);
+  marcarRef.current = marcarMomento;
+  useEffect(() => {
+    const alTeclear = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'h' || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)) return; // escribiendo: la H es una letra
+      e.preventDefault();
+      marcarRef.current();
+    };
+    window.addEventListener('keydown', alTeclear);
+    return () => window.removeEventListener('keydown', alTeclear);
+  }, []);
   const verComoSaleAlAire = () => void api.vistaPreviaTransmision(sid).then((r) => window.open(r.direccion, '_blank', 'noopener')).catch(() => setAviso('No se pudo abrir la vista previa'));
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
@@ -395,6 +407,8 @@ export default function Consola() {
               <BotonControl data-testid="boton-cam" activo={camOn} encendido={{ icono: <IconoVideo size={22} aria-hidden="true" />, texto: 'Apagar mi cámara' }} apagado={{ icono: <VideoOff size={22} aria-hidden="true" />, texto: 'Encender mi cámara' }} onClick={() => setCamOn(!camOn)} />
               <SelectorDiseno diseno={estado.diseno} personas={enEscena.map((v) => ({ id: v.id, nombre: estado.equipo.find((m) => m.id === v.id)?.nombre ?? participantes.find((p) => p.id === v.id)?.nombre ?? '' }))}
                 onElegir={elegirDiseno} />
+              <button data-testid="boton-highlight" onClick={marcarMomento} title="Marcar este momento (tecla H)"
+                className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg bg-oro px-3 text-[13px] font-semibold text-oro-texto"><Star size={14} aria-hidden="true" />Highlight</button>
               <Boton data-testid="mi-escenario" onClick={alternarEscenario}>
                 <span className="inline-flex items-center gap-1.5"><ArrowRightLeft size={14} aria-hidden="true" />{enEscenario ? 'Ir a backstage' : 'Subirme al escenario'}</span>
               </Boton>
@@ -474,6 +488,7 @@ export default function Consola() {
             <ChatConsola key={vista} canalInicial={produccion ? 'equipo' : 'sesion'} sid={sid} mensajes={estado.mensajes} yo={yo} config={estado.chat} onError={setAviso}
               personasSesion={participantes.filter((p) => p.lugar === 'backstage' || p.lugar === 'escenario').map((p) => ({ id: p.id, nombre: p.nombre }))}
               personasVerde={enVerde.map((p) => ({ id: p.id, nombre: p.nombre }))} />
+            <PanelHighlights sid={sid} nombreSesion={estado.sesion.nombre} highlights={estado.highlights} onError={setAviso} />
           </aside>
         </div>
 

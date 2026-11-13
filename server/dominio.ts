@@ -1,7 +1,7 @@
 // Reglas de la sesión, sin red ni LiveKit: quién puede estar dónde y cómo se mueve.
 // Todo lo que cambia el estado sube la versión. Las acciones repetidas no cambian nada (así un doble clic no estorba).
 import { randomBytes, createHash } from 'node:crypto';
-import { AJUSTES_DISENO, FONDOS_DISENO, FORMAS_DISENO, MAX_TEXTO_CHAT, TIPOS_DISENO, normalizarChat, normalizarDiseno, type CanalChat, type ConfigChat, type Diseno, type Lugar } from '../compartido/tipos';
+import { AJUSTES_DISENO, FONDOS_DISENO, FORMAS_DISENO, MAX_TEXTO_CHAT, MAX_TITULO_HIGHLIGHT, TIPOS_DISENO, normalizarChat, normalizarDiseno, type CanalChat, type ConfigChat, type Diseno, type Lugar } from '../compartido/tipos';
 
 export class ErrorDominio extends Error {
   constructor(public codigo: 'NO_ENCONTRADO' | 'NO_PERMITIDO' | 'SESION_TERMINADA', mensaje: string) {
@@ -44,7 +44,17 @@ export interface Mensaje {
   grupal?: boolean;
 }
 
+export interface Highlight {
+  id: string;
+  en: number;
+  vivoDesde: number | null;
+  titulo: string;
+  porNombre: string;
+}
+
 export interface Sesion {
+  /** Momentos marcados por el equipo (los últimos 500). Nunca llegan a los participantes. */
+  highlights?: Highlight[];
   /** La transmisión en curso (en LiveKit: el egress que manda el escenario a Mux). Ausente si no se está transmitiendo. */
   envivo?: { egressId: string; desde: number };
   /** Identificador del evento del calendario del Hub al que pertenece esta sesión (una sesión por evento). */
@@ -281,6 +291,40 @@ export function detenerEnVivo(s: Sesion): string | null {
   delete s.envivo;
   sube(s);
   return id;
+}
+
+const MAX_HIGHLIGHTS = 500;
+
+/** Un clic marca el momento. Si se está al aire, queda ligado a ESE EN VIVO (la grabación cuenta desde que empezó); si no, solo guarda la hora. */
+export function marcarHighlight(s: Sesion, equipoId: string, ahora = Date.now()): Highlight {
+  viva(s);
+  const m = miembro(s, equipoId);
+  const h: Highlight = { id: 'h_' + aleatorio(3), en: ahora, vivoDesde: s.envivo?.desde ?? null, titulo: '', porNombre: m.nombre };
+  s.highlights = [...(s.highlights ?? []), h].slice(-MAX_HIGHLIGHTS);
+  sube(s);
+  return h;
+}
+
+function highlight(s: Sesion, id: string): Highlight {
+  const h = (s.highlights ?? []).find((x) => x.id === id);
+  if (!h) throw new ErrorDominio('NO_ENCONTRADO', 'Ese highlight ya no existe');
+  return h;
+}
+
+/** Ponerle título a mano (después la IA los nombrará al transcribir). Se puede aunque la sesión ya haya terminado. */
+export function titularHighlight(s: Sesion, id: string, titulo: string): { cambio: boolean } {
+  const h = highlight(s, id);
+  const limpio = titulo.replace(/\s+/g, ' ').trim().slice(0, MAX_TITULO_HIGHLIGHT);
+  if (h.titulo === limpio) return { cambio: false };
+  h.titulo = limpio;
+  sube(s);
+  return { cambio: true };
+}
+
+export function borrarHighlight(s: Sesion, id: string): void {
+  highlight(s, id);
+  s.highlights = (s.highlights ?? []).filter((x) => x.id !== id);
+  sube(s);
 }
 
 export function subir(s: Sesion, pid: string): { cambio: boolean; de: Lugar } {

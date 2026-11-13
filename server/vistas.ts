@@ -44,6 +44,7 @@ export function estadoParaEquipo(s: Sesion, yo: string): EstadoEquipo {
     chat: normalizarChat(s.chat),
     mensajes: (s.mensajes ?? []).map((m) => publico(m, m.para)),
     envivo: enVivoPublico(s),
+    highlights: (s.highlights ?? []).map((h) => ({ id: h.id, en: h.en, vivoDesde: h.vivoDesde, titulo: h.titulo, porNombre: h.porNombre })),
     transmision: s.muxLlave ? 'lista' : 'sin-llave',
   };
 }
