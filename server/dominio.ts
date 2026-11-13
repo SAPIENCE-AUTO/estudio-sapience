@@ -16,6 +16,8 @@ export interface Participante {
   verdeCon: string | null;
   conectado: boolean;
   entroEn: number;
+  /** Cuándo aceptó el aviso de privacidad (entrar exige aceptarlo). Ausente en sesiones guardadas antes de que existiera. */
+  avisoEn?: number;
 }
 
 export interface Miembro {
@@ -67,7 +69,7 @@ export function entrar(s: Sesion, nombre: string, ahora = Date.now()): Participa
   viva(s);
   const limpio = nombre.trim().replace(/\s+/g, ' ').slice(0, 60);
   if (!limpio) throw new ErrorDominio('NO_PERMITIDO', 'Escribe tu nombre');
-  const p: Participante = { id: 'p_' + aleatorio(4), nombre: limpio, lugar: 'lobby', verdeCon: null, conectado: false, entroEn: ahora };
+  const p: Participante = { id: 'p_' + aleatorio(4), nombre: limpio, lugar: 'lobby', verdeCon: null, conectado: false, entroEn: ahora, avisoEn: ahora };
   s.participantes[p.id] = p;
   sube(s);
   return p;

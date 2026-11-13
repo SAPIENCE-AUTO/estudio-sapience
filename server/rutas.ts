@@ -108,7 +108,7 @@ export function crearRutas(): express.Router {
   }));
 
   r.post('/p/:codigo/entrar', ruta(async (req, res) => {
-    const { nombre } = z.object({ nombre: z.string().min(1).max(60) }).parse(req.body);
+    const { nombre } = z.object({ nombre: z.string().min(1).max(60), aceptoAviso: z.literal(true, { error: 'Acepta el aviso de privacidad para entrar' }) }).parse(req.body);
     res.json(await servicio.entrarParticipante(req.params.codigo as string, nombre));
   }));
 

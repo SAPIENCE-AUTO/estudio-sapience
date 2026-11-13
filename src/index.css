@@ -19,6 +19,9 @@
   --color-aviso: #dc7a09;
   --color-peligro: #b91c1c;
   --color-peligro-fondo: #fbe4e4;
+  /* Indicadores de la consola: rojo = requiere atención (lobby, mensaje nuevo); azul oscuro = en la sala verde. Siempre con ícono y texto. */
+  --color-atencion: #c62828;
+  --color-sala: #1f3b8a;
   --color-video: #dce8ec;
   --color-video-2: #cfe0e6;
   --color-silueta: #b5cbd3;

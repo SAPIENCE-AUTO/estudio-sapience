@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Room, Track, type RemoteAudioTrack } from 'livekit-client';
-import { Copy, MicOff } from 'lucide-react';
+import { ArrowRightLeft, BellRing, Copy, DoorOpen, EyeOff, Mic, MicOff, Video as IconoVideo, VideoOff } from 'lucide-react';
 import type { EstadoEquipo, ParticipantePublico } from '../../compartido/tipos';
 import { api } from '../lib/api';
 import { useConsola, type Accion } from '../lib/useConsola';
 import { camaraDe, proteger, useCambiosDeSala } from '../lib/sala';
 import { Mosaico } from '../components/Mosaico';
+import { Lienzo } from '../components/Lienzo';
+import { useVistaPrevia } from '../lib/medios';
 import { AudioRemoto } from '../components/Video';
 
 // ───────── Conexiones de LiveKit del equipo ─────────
@@ -37,10 +39,13 @@ function sonidosDe(room: Room | null): RemoteAudioTrack[] {
 const minutos = (desde: number, ahora: number) => Math.max(0, Math.floor((ahora - desde) / 60000));
 
 // ───────── Piezas de la pantalla ─────────
-function Tarjeta({ titulo, cuenta, children, className }: { titulo: string; cuenta?: number; children: React.ReactNode; className?: string }) {
+function Tarjeta({ titulo, cuenta, aviso, icono, children, className }: { titulo: string; cuenta?: number; aviso?: React.ReactNode; icono?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
     <section className={`rounded-2xl border border-borde bg-tarjeta p-4 ${className ?? ''}`}>
-      <h2 className="mb-3 flex items-center justify-between text-[13px] font-semibold">{titulo}{cuenta !== undefined && <span className="rounded-md bg-teal-claro px-2 py-0.5 text-[11px] text-teal">{cuenta}</span>}</h2>
+      <h2 className="mb-3 flex items-center justify-between gap-2 text-[13px] font-semibold">
+        <span className="inline-flex items-center gap-1.5">{icono}{titulo}</span>
+        <span className="inline-flex items-center gap-1.5">{aviso}{cuenta !== undefined && <span className="rounded-md bg-teal-claro px-2 py-0.5 text-[11px] text-teal">{cuenta}</span>}</span>
+      </h2>
       {children}
     </section>
   );
@@ -48,6 +53,19 @@ function Tarjeta({ titulo, cuenta, children, className }: { titulo: string; cuen
 const Boton = ({ principal, ...p }: React.ButtonHTMLAttributes<HTMLButtonElement> & { principal?: boolean }) => (
   <button {...p} className={`h-9 whitespace-nowrap rounded-lg px-3 text-[13px] font-semibold ${principal ? 'bg-teal text-white' : 'bg-gris-boton text-teal'} ${p.className ?? ''}`} />
 );
+
+/** Indicador con ícono y texto (nunca solo color): rojo = requiere atención, azul oscuro = sala verde. */
+function Indicador({ tono, icono: Icono, children, ...resto }: { tono: 'atencion' | 'sala' | 'neutro'; icono: typeof BellRing; children: React.ReactNode; 'data-testid'?: string }) {
+  const estilos = { atencion: 'bg-atencion text-white', sala: 'bg-sala text-white', neutro: 'bg-teal-claro text-teal' }[tono];
+  return <span {...resto} className={`inline-flex items-center gap-1 whitespace-nowrap rounded-lg px-2 py-0.5 text-[11px] font-semibold ${estilos}`}><Icono size={12} aria-hidden="true" />{children}</span>;
+}
+
+function BotonRedondo({ activo, apagado, etiqueta, onClick, children, ...resto }: { activo: boolean; apagado: React.ReactNode; etiqueta: [string, string]; onClick: () => void; children: React.ReactNode; 'data-testid'?: string }) {
+  return (
+    <button {...resto} aria-label={activo ? etiqueta[0] : etiqueta[1]} title={activo ? etiqueta[0] : etiqueta[1]} onClick={onClick}
+      className={`flex h-10 w-10 items-center justify-center rounded-full ${activo ? 'bg-gris-boton text-teal' : 'bg-peligro-fondo text-peligro'}`}>{activo ? children : apagado}</button>
+  );
+}
 
 function PanelVerde({ p, room, yo, ejecutar }: { p: ParticipantePublico; room: Room | undefined; yo: string; ejecutar: (a: Accion, pid: string) => void }) {
   useCambiosDeSala(room ?? null);
@@ -69,6 +87,8 @@ export default function Consola() {
   const { estado, conectado, participantes, ejecutar, aviso, limpiarAviso, setAviso } = useConsola(sid);
   const salaSesion = useSalaSesion(sid, !!estado);
   useCambiosDeSala(salaSesion);
+  const [micOn, setMicOn] = useState(true);
+  const [camOn, setCamOn] = useState(true);
   const [ahora, setAhora] = useState(Date.now());
   useEffect(() => { const t = setInterval(() => setAhora(Date.now()), 30000); return () => clearInterval(t); }, []);
 
@@ -94,11 +114,15 @@ export default function Consola() {
         return;
       }
       if (cancelado) return;
-      await salaSesion.localParticipant.setMicrophoneEnabled(true).catch(() => undefined);
-      await salaSesion.localParticipant.setCameraEnabled(true).catch(() => undefined);
+      await salaSesion.localParticipant.setMicrophoneEnabled(micOn).catch(() => undefined);
+      await salaSesion.localParticipant.setCameraEnabled(camOn).catch(() => undefined);
     })();
     return () => { cancelado = true; };
-  }, [salaSesion, salaSesionLista, enEscenario, equipoIds, enVerdeConmigo, yo]);
+  }, [salaSesion, salaSesionLista, enEscenario, equipoIds, enVerdeConmigo, yo, micOn, camOn]);
+
+  // Fuera del escenario y sin hablar con nadie en la sala verde no se publica nada, pero la persona del equipo se sigue viendo (opaca) en backstage.
+  const publica = enEscenario || enVerdeConmigo !== '';
+  const vistaPrevia = useVistaPrevia(undefined, !publica && camOn);
 
   if (!estado) return <div className="p-6 text-sm text-tenue">Conectando…</div>;
 
@@ -108,19 +132,39 @@ export default function Consola() {
   const enPantalla = participantes.filter((p) => p.lugar === 'escenario');
   const nombreEquipo = (id: string | null) => estado.equipo.find((m) => m.id === id)?.nombre ?? 'el equipo';
 
+  const miCamara = salaSesion?.localParticipant.getTrackPublication(Track.Source.Camera)?.track ?? null;
+  const alternarEscenario = () => void api.miembroEnEscenario(sid, !enEscenario).catch(() => setAviso('No se pudo cambiar'));
+
+  // Quién va en el escenario: el equipo y los participantes que subieron. El acomodo cambia solo según cuántos son.
+  const enEscena = [
+    ...estado.equipo.filter((m) => m.enEscenario).map((m) => (
+      <Mosaico key={m.id} nombre={m.nombre} esYo={m.id === yo} pista={m.id === yo ? miCamara : camaraDe(salaSesion, m.id)} espejo={m.id === yo} className="h-full w-full">
+        {m.id === yo && (
+          <button data-testid="ir-backstage" onClick={alternarEscenario} className="absolute right-2 top-2 inline-flex h-7 items-center gap-1 rounded-md bg-teal px-2.5 text-[11px] font-semibold text-white">
+            <ArrowRightLeft size={12} aria-hidden="true" />Ir a backstage
+          </button>
+        )}
+      </Mosaico>
+    )),
+    ...enPantalla.map((p) => (
+      <Mosaico key={p.id} nombre={p.nombre} pista={camaraDe(salaSesion, p.id)} className="h-full w-full">
+        <button data-testid={`bajar-${p.nombre}`} onClick={() => ejecutar('bajar', p.id)} className="absolute right-2 top-2 h-7 rounded-md bg-teal px-2.5 text-[11px] font-semibold text-white">Bajar</button>
+      </Mosaico>
+    )),
+  ];
+
   return (
     <div className="flex h-full flex-col" data-testid="consola" data-sesion-terminada={estado.sesion.terminada}>
-      <header className="flex items-center justify-between gap-4 border-b border-borde bg-tarjeta px-5 py-3">
-        <div className="flex items-center gap-3">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-borde bg-tarjeta px-5 py-3">
+        <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-[15px] font-semibold" data-testid="nombre-sesion">{estado.sesion.nombre}</h1>
           <span title={conectado ? 'Conectado' : 'Reconectando…'} className={`inline-block h-2.5 w-2.5 rounded-full ${conectado ? 'bg-ok' : 'bg-aviso'}`} />
+          {delLobby.length > 0 && <Indicador tono="atencion" icono={BellRing} data-testid="indicador-lobby">{delLobby.length} en el lobby</Indicador>}
+          {enVerde.length > 0 && <Indicador tono="sala" icono={DoorOpen} data-testid="indicador-verde">{enVerde.length} en la sala verde</Indicador>}
         </div>
         <div className="flex items-center gap-2">
           <Boton onClick={() => void navigator.clipboard?.writeText(`${location.origin}/p/${estado.sesion.codigo}`).then(() => setAviso('Link de participantes copiado'))} data-testid="copiar-link">
             <span className="inline-flex items-center gap-1.5"><Copy size={14} />Link de participantes</span>
-          </Boton>
-          <Boton data-testid="mi-escenario" onClick={() => void api.miembroEnEscenario(sid, !enEscenario).catch(() => setAviso('No se pudo cambiar'))}>
-            {enEscenario ? 'Bajarme del escenario' : 'Subirme al escenario'}
           </Boton>
           <Boton data-testid="terminar" onClick={() => { if (confirm('¿Terminar la sesión para todos?')) void api.terminar(sid); }} className="!bg-peligro-fondo !text-peligro">Terminar sesión</Boton>
         </div>
@@ -128,52 +172,53 @@ export default function Consola() {
 
       {sonidosDe(salaSesion).map((t) => <AudioRemoto key={t.sid} pista={t} />)}
 
-      <main className="grid min-h-0 flex-1 grid-cols-[340px_1fr] gap-4 p-4">
-        <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto">
-          <Tarjeta titulo="Lobby" cuenta={delLobby.length}>
-            <ul className="flex flex-col gap-2" data-testid="lista-lobby">
-              {delLobby.length === 0 && <li className="text-[13px] text-tenue">Nadie esperando</li>}
-              {delLobby.map((p) => (
-                <li key={p.id} data-testid={`fila-lobby-${p.nombre}`} className="flex items-center justify-between gap-2">
-                  <div className="flex min-w-0 flex-col">
-                    <span className="truncate text-[13px] font-medium">{p.nombre}</span>
-                    <span className="text-[11px] text-tenue">{p.conectado ? `hace ${minutos(p.entroEn, ahora)} min` : 'Sin conexión'}</span>
-                  </div>
-                  <Boton principal data-testid={`llamar-${p.nombre}`} disabled={!p.conectado} onClick={() => ejecutar('llamar', p.id)}>Llamar</Boton>
-                </li>
-              ))}
-            </ul>
-          </Tarjeta>
-
-          <Tarjeta titulo="Sala verde" cuenta={enVerde.length}>
-            <div className="flex flex-col gap-4" data-testid="lista-verde">
-              {enVerde.length === 0 && <p className="text-[13px] text-tenue">Nadie en la sala verde</p>}
-              {enVerde.map((p) => <PanelVerde key={p.id} p={p} room={salaSesion ?? undefined} yo={yo} ejecutar={ejecutar} />)}
-              {enVerde.some((p) => p.verdeCon !== yo) && <p className="text-[12px] text-tenue">{`Con ${nombreEquipo(enVerde.find((p) => p.verdeCon !== yo)?.verdeCon ?? null)}`}</p>}
+      <main className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+        <div className="grid shrink-0 grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+          <section className="flex min-w-0 flex-col gap-3">
+            <div className="mx-auto w-full" style={{ maxWidth: 'calc((100vh - 400px) * 16 / 9)', minWidth: 360 }}>
+              <Lienzo data-testid="lista-escenario" items={enEscena} vacio="Nadie en el escenario" />
             </div>
-          </Tarjeta>
-        </aside>
-
-        <section className="flex min-h-0 flex-col gap-4 overflow-y-auto">
-          <Tarjeta titulo="Escenario" cuenta={enPantalla.length + (enEscenario ? 1 : 0)}>
-            <div className="grid grid-cols-3 gap-2" data-testid="lista-escenario">
-              {!enPantalla.length && !enEscenario && <p className="col-span-3 text-[13px] text-tenue">Nadie en el escenario</p>}
-              {estado.equipo.filter((m) => m.enEscenario).map((m) => (
-                <Mosaico key={m.id} nombre={m.nombre} esYo={m.id === yo} pista={m.id === yo ? salaSesion?.localParticipant.getTrackPublication(Track.Source.Camera)?.track : camaraDe(salaSesion, m.id)} espejo={m.id === yo} className="aspect-video rounded-xl" />
-              ))}
-              {enPantalla.map((p) => (
-                <Mosaico key={p.id} nombre={p.nombre} pista={camaraDe(salaSesion, p.id)} className="aspect-video rounded-xl">
-                  <button data-testid={`bajar-${p.nombre}`} onClick={() => ejecutar('bajar', p.id)} className="absolute bottom-2 right-2 h-7 rounded-md bg-teal px-2.5 text-[11px] font-semibold text-white">Bajar</button>
-                </Mosaico>
-              ))}
+            <div className="flex flex-wrap items-center justify-center gap-2" data-testid="controles">
+              <BotonRedondo data-testid="boton-mic" activo={micOn} apagado={<MicOff size={18} />} etiqueta={['Silenciar mi micrófono', 'Activar mi micrófono']} onClick={() => setMicOn(!micOn)}><Mic size={18} /></BotonRedondo>
+              <BotonRedondo data-testid="boton-cam" activo={camOn} apagado={<VideoOff size={18} />} etiqueta={['Apagar mi cámara', 'Encender mi cámara']} onClick={() => setCamOn(!camOn)}><IconoVideo size={18} /></BotonRedondo>
+              <Boton data-testid="mi-escenario" onClick={alternarEscenario}>
+                <span className="inline-flex items-center gap-1.5"><ArrowRightLeft size={14} aria-hidden="true" />{enEscenario ? 'Ir a backstage' : 'Subirme al escenario'}</span>
+              </Boton>
             </div>
-          </Tarjeta>
+          </section>
 
-          <Tarjeta titulo="Backstage" cuenta={enBackstage.length}>
-            <div className="grid grid-cols-3 gap-3" data-testid="lista-backstage">
-              {!enBackstage.length && <p className="col-span-3 text-[13px] text-tenue">Nadie en backstage</p>}
+          <aside className="flex min-h-0 flex-col gap-3">
+            <Tarjeta titulo="Lobby" cuenta={delLobby.length} aviso={delLobby.length > 0 ? <Indicador tono="atencion" icono={BellRing}>Esperan</Indicador> : undefined}>
+              <ul className="flex flex-col gap-2" data-testid="lista-lobby">
+                {delLobby.length === 0 && <li className="text-[13px] text-tenue">Nadie esperando</li>}
+                {delLobby.map((p) => (
+                  <li key={p.id} data-testid={`fila-lobby-${p.nombre}`} className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 flex-col">
+                      <span className="truncate text-[13px] font-medium">{p.nombre}</span>
+                      <span className="text-[11px] text-tenue">{p.conectado ? `hace ${minutos(p.entroEn, ahora)} min` : 'Sin conexión'}</span>
+                    </div>
+                    <Boton principal data-testid={`llamar-${p.nombre}`} disabled={!p.conectado} onClick={() => ejecutar('llamar', p.id)}>Llamar</Boton>
+                  </li>
+                ))}
+              </ul>
+            </Tarjeta>
+
+            <Tarjeta titulo="Sala verde" cuenta={enVerde.length} aviso={enVerde.length > 0 ? <Indicador tono="sala" icono={DoorOpen}>Adentro</Indicador> : undefined}>
+              <div className="flex flex-col gap-4" data-testid="lista-verde">
+                {enVerde.length === 0 && <p className="text-[13px] text-tenue">Nadie en la sala verde</p>}
+                {enVerde.map((p) => <PanelVerde key={p.id} p={p} room={salaSesion ?? undefined} yo={yo} ejecutar={ejecutar} />)}
+                {enVerde.some((p) => p.verdeCon !== yo) && <p className="text-[12px] text-tenue">{`Con ${nombreEquipo(enVerde.find((p) => p.verdeCon !== yo)?.verdeCon ?? null)}`}</p>}
+              </div>
+            </Tarjeta>
+          </aside>
+        </div>
+
+        <Tarjeta className="shrink-0" titulo="Backstage: solo lo ve el equipo" cuenta={enBackstage.length} icono={<EyeOff size={14} aria-hidden="true" />}>
+          <div className="flex flex-wrap items-start gap-3">
+            <div className="flex flex-wrap items-start gap-3" data-testid="lista-backstage">
+              {!enBackstage.length && <p className="text-[13px] text-tenue">Nadie en backstage</p>}
               {enBackstage.map((p) => (
-                <div key={p.id} className="flex flex-col gap-1.5" data-testid={`tarjeta-backstage-${p.nombre}`}>
+                <div key={p.id} className="flex w-52 flex-col gap-1.5" data-testid={`tarjeta-backstage-${p.nombre}`}>
                   <Mosaico nombre={p.nombre} pista={camaraDe(salaSesion, p.id)} className="aspect-video rounded-xl">
                     {!p.conectado && <span className="absolute right-2 top-2 rounded-md bg-peligro-fondo px-1.5 py-0.5 text-[10px] font-semibold text-peligro"><MicOff size={10} className="mr-1 inline" />Sin conexión</span>}
                   </Mosaico>
@@ -185,8 +230,14 @@ export default function Consola() {
                 </div>
               ))}
             </div>
-          </Tarjeta>
-        </section>
+            {!enEscenario && miembro && (
+              <div className="flex w-52 flex-col gap-1.5" data-testid="mi-vineta-backstage">
+                <Mosaico nombre={miembro.nombre} esYo flujo={vistaPrevia} pista={miCamara} espejo className="aspect-video rounded-xl opacity-50" />
+                <Boton principal data-testid="volver-escenario" onClick={alternarEscenario}>Volver al escenario</Boton>
+              </div>
+            )}
+          </div>
+        </Tarjeta>
       </main>
 
       {aviso && (

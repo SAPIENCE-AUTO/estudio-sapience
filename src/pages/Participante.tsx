@@ -9,8 +9,10 @@ import { camaraDe, esperarPermisoDePublicar, permitidosDeParticipante, proteger,
 import { listarDispositivos, pedirPermiso, useNivelMicrofono, useVistaPrevia, type Dispositivos, type PermisoMedios } from '../lib/medios';
 import { Mosaico } from '../components/Mosaico';
 import { AudioRemoto } from '../components/Video';
+import { Lienzo } from '../components/Lienzo';
+import { AVISO_ACEPTO, AVISO_COMPLETO, AVISO_RESUMEN } from '../lib/aviso';
 
-type Paso = 'cargando' | 'invalido' | 'nombre' | 'dispositivos' | 'dentro';
+type Paso = 'cargando' | 'invalido' | 'aviso' | 'nombre' | 'dispositivos' | 'dentro';
 interface Guardado { entrada: RespuestaEntrar; camId?: string; micId?: string }
 
 const clave = (codigo: string) => `estudio:${codigo}`;
@@ -39,10 +41,11 @@ export default function Participante() {
   const [entrada, setEntrada] = useState<RespuestaEntrar | null>(guardado?.entrada ?? null);
   const [errorEntrada, setErrorEntrada] = useState<string | null>(null);
   const [entrando, setEntrando] = useState(false);
+  const [acepto, setAcepto] = useState(false);
 
   useEffect(() => {
     if (paso !== 'cargando') return;
-    api.infoLink(codigo).then((s) => { setSesion(s); setPaso('nombre'); }).catch(() => setPaso('invalido'));
+    api.infoLink(codigo).then((s) => { setSesion(s); setPaso('aviso'); }).catch(() => setPaso('invalido'));
   }, [codigo, paso]);
 
   async function entrar() {
@@ -58,6 +61,27 @@ export default function Participante() {
 
   if (paso === 'cargando') return <Marco><p className="text-sm text-tenue">Cargando…</p></Marco>;
   if (paso === 'invalido') return <Marco><Tarjeta><h1 className="text-lg font-semibold">Este link no es válido</h1><p className="mt-1 text-sm text-tenue">Pide uno nuevo a quien te invitó.</p></Tarjeta></Marco>;
+
+  if (paso === 'aviso') {
+    return (
+      <Marco>
+        <div className="flex flex-col gap-1">
+          <h1 className="text-lg font-semibold" data-testid="titulo-sesion">{sesion?.nombre}</h1>
+          <p className="text-[15px] font-semibold">Antes de entrar</p>
+          <p className="text-[13px] leading-5 text-tenue">{AVISO_RESUMEN}</p>
+        </div>
+        <Tarjeta className="flex flex-col gap-2" >
+          <h2 className="text-[13px] font-semibold">Aviso de privacidad</h2>
+          {AVISO_COMPLETO.map((t) => <p key={t} className="text-[13px] leading-5 text-tenue">{t}</p>)}
+        </Tarjeta>
+        <label className="flex items-start gap-3 text-[14px] leading-5">
+          <input type="checkbox" data-testid="acepto-aviso" checked={acepto} onChange={(e) => setAcepto(e.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-[#0f3d4d]" />
+          <span>{AVISO_ACEPTO}</span>
+        </label>
+        <BotonPrincipal data-testid="aceptar-aviso" disabled={!acepto} onClick={() => setPaso('nombre')}>Continuar</BotonPrincipal>
+      </Marco>
+    );
+  }
 
   if (paso === 'nombre') {
     return (
@@ -244,7 +268,7 @@ function Dentro({ entrada, camId, micId }: { entrada: RespuestaEntrar; camId?: s
   );
 
   return (
-    <div data-lugar={yo.lugar} data-testid="dentro" className="mx-auto flex min-h-full w-full max-w-md flex-col">
+    <div data-lugar={yo.lugar} data-testid="dentro" className={`mx-auto flex min-h-full w-full flex-col ${yo.lugar === 'backstage' || yo.lugar === 'escenario' ? 'max-w-md md:max-w-5xl' : 'max-w-md'}`}>
       <div className="flex items-center justify-between px-5 pb-3 pt-5">{chip}{punto}</div>
       {sonidos.map((t) => <AudioRemoto key={t.sid} pista={t} />)}
       {room && !room.canPlaybackAudio && (
@@ -277,16 +301,12 @@ function Dentro({ entrada, camId, micId }: { entrada: RespuestaEntrar; camId?: s
 
       {(yo.lugar === 'backstage' || yo.lugar === 'escenario') && (
         <div className="flex flex-col gap-4 pb-6">
-          <div className={`grid gap-0.5 bg-video ${yo.lugar === 'escenario' ? 'grid-cols-2' : 'grid-cols-1'}`} data-testid="escenario">
-            {(yo.lugar === 'escenario' ? [...otrosEnPantalla] : otrosEnPantalla).map((p) => (
-              <Mosaico key={p.id} nombre={p.nombre} pista={camaraDe(room, p.id)} className="aspect-video w-full" />
-            ))}
-            {yo.lugar === 'escenario' && (
-              <Mosaico nombre={yo.nombre} esYo pista={camaraLocal} flujo={camaraLocal ? null : vistaPrevia} espejo className="aspect-video w-full" />
-            )}
-            {yo.lugar === 'backstage' && otrosEnPantalla.length === 0 && (
-              <div className="flex aspect-video w-full items-center justify-center text-[13px] text-tenue">Todavía no hay nadie en pantalla</div>
-            )}
+          <div className="px-3 md:px-5">
+            <Lienzo data-testid="escenario" vacio="Todavía no hay nadie en pantalla"
+              items={[
+                ...otrosEnPantalla.map((p) => <Mosaico key={p.id} nombre={p.nombre} pista={camaraDe(room, p.id)} className="h-full w-full" />),
+                ...(yo.lugar === 'escenario' ? [<Mosaico key={yo.id} nombre={yo.nombre} esYo pista={camaraLocal} flujo={camaraLocal ? null : vistaPrevia} espejo className="h-full w-full" />] : []),
+              ]} />
           </div>
           <div className="flex flex-col gap-1 px-5">
             <h1 className="text-lg font-semibold">{yo.lugar === 'escenario' ? 'Estás en pantalla' : 'Estás en espera'}</h1>
@@ -294,7 +314,7 @@ function Dentro({ entrada, camId, micId }: { entrada: RespuestaEntrar; camId?: s
           </div>
           {yo.lugar === 'backstage' && (
             <div className="flex items-center gap-3 px-5">
-              <Mosaico nombre={yo.nombre} esYo pista={camaraLocal} flujo={camaraLocal ? null : vistaPrevia} espejo className="aspect-[4/3] w-32 rounded-xl" />
+              <Mosaico nombre={yo.nombre} esYo pista={camaraLocal} flujo={camaraLocal ? null : vistaPrevia} espejo className="aspect-[4/3] w-32 rounded-xl opacity-60" />
               <span className="text-[13px] leading-5 text-tenue">Solo tú te ves aquí</span>
             </div>
           )}

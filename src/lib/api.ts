@@ -49,6 +49,6 @@ export const api = {
   terminar: (sid: string) => pedir<RespuestaAccion>(`/sesiones/${sid}/terminar`, { equipo: true }),
   // participante
   infoLink: (codigo: string) => pedir<{ nombre: string }>(`/p/${codigo}`),
-  entrar: (codigo: string, nombre: string) => pedir<RespuestaEntrar>(`/p/${codigo}/entrar`, { cuerpo: { nombre } }),
+  entrar: (codigo: string, nombre: string) => pedir<RespuestaEntrar>(`/p/${codigo}/entrar`, { cuerpo: { nombre, aceptoAviso: true } }),
   livekitActual: (pase: string) => pedir<RespuestaEntrar['livekit']>('/yo/livekit', { pase }),
 };

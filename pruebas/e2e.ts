@@ -100,6 +100,10 @@ async function main() {
     body: JSON.stringify({ nombre: `Prueba automática ${new Date().toISOString().slice(11, 19)}` }),
   })).json() as { id: string; codigo: string };
 
+  // Sin aceptar el aviso de privacidad nadie entra (lo exige el servidor, no solo la pantalla).
+  const sinAviso = await fetch(`http://localhost:8787/api/p/${creada.codigo}/entrar`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nombre: 'Intruso' }) });
+  anotar('Sin aceptar el aviso de privacidad el servidor no deja entrar', sinAviso.status === 400, `estado ${sinAviso.status}`);
+
   // Un Chrome distinto por cada actor (consola y participantes): así todas las pantallas están al frente y ninguna se frena,
   // como pasaría en computadoras distintas.
   const lanzados: { cerrar: () => Promise<void> }[] = [];
@@ -132,6 +136,10 @@ async function main() {
       p.on('pageerror', (e) => console.log(`  [${nombre}] error:`, String(e).slice(0, 160)));
       p.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warn') console.log(`  [${nombre}] ${m.type()}: ${m.text().slice(0, 200)}`); });
       await p.goto(`${WEB}/p/${creada.codigo}`);
+      await p.waitForSelector('[data-testid="acepto-aviso"]');
+      await p.click('[data-testid="acepto-aviso"]');
+      await p.waitForFunction(`!document.querySelector('[data-testid="aceptar-aviso"]')?.disabled`);
+      await p.click('[data-testid="aceptar-aviso"]');
       await p.waitForSelector('[data-testid="nombre"]');
       await p.type('[data-testid="nombre"]', nombre);
       await p.click('[data-testid="continuar"]');
