@@ -45,6 +45,15 @@ export interface Mensaje {
 }
 
 export interface Sesion {
+  /** Identificador del evento del calendario del Hub al que pertenece esta sesión (una sesión por evento). */
+  externoId?: string;
+  /**
+   * Llave de transmisión de Mux de la sala de observación (la ÚNICA credencial que permite transmitir ahí). Solo el servidor la usa:
+   * NUNCA va en el estado que reciben las pantallas, ni en ninguna respuesta, ni en los registros.
+   */
+  muxLlave?: string;
+  /** Página de observación del cliente (en el Hub), solo para mostrarla. */
+  observacionUrl?: string;
   /** Cómo está el chat de la sesión. Ausente en sesiones guardadas antes de que existiera (= abierto, solo con el equipo). */
   chat?: ConfigChat;
   /** Mensajes de los chats (los últimos MAX_MENSAJES). Ausente en sesiones guardadas antes de que existieran. */
@@ -64,11 +73,42 @@ export interface Sesion {
 
 const aleatorio = (bytes: number) => randomBytes(bytes).toString('hex');
 
-export function nuevaSesion(nombre: string, ahora = Date.now()): Sesion {
-  return {
+export interface DatosExternos { externoId?: string; muxLlave?: string; observacionUrl?: string }
+
+export function nuevaSesion(nombre: string, ahora = Date.now(), externos: DatosExternos = {}): Sesion {
+  const s: Sesion = {
     id: 's' + aleatorio(5), nombre: nombre.trim().slice(0, 120) || 'Sesión sin nombre',
     codigo: aleatorio(6), creadaEn: ahora, terminada: false, version: 1, participantes: {}, equipo: {},
   };
+  if (externos.externoId) s.externoId = externos.externoId;
+  if (externos.muxLlave) s.muxLlave = externos.muxLlave;
+  if (externos.observacionUrl) s.observacionUrl = externos.observacionUrl;
+  return s;
+}
+
+/** La sesión VIVA que corresponde a un evento del Hub (la más reciente), si existe. Una terminada no cuenta: el evento puede volver a empezar. */
+export function sesionDelEvento(sesiones: Record<string, Sesion>, externoId: string): Sesion | undefined {
+  return Object.values(sesiones).filter((s) => s.externoId === externoId && !s.terminada).sort((a, b) => b.creadaEn - a.creadaEn)[0];
+}
+
+/**
+ * Crea la sesión de un evento, o devuelve la que ya existe (apretar el botón del Hub dos veces no crea dos). Si el Hub manda una llave
+ * o un nombre distinto (la regeneró o renombró el evento), se actualiza. Sin `externoId` siempre crea una nueva.
+ */
+export function crearOActualizar(sesiones: Record<string, Sesion>, nombre: string, externos: DatosExternos = {}, ahora = Date.now()): { sesion: Sesion; yaExistia: boolean; cambio: boolean } {
+  const existente = externos.externoId ? sesionDelEvento(sesiones, externos.externoId) : undefined;
+  if (!existente) {
+    const sesion = nuevaSesion(nombre, ahora, externos);
+    sesiones[sesion.id] = sesion;
+    return { sesion, yaExistia: false, cambio: true };
+  }
+  let cambio = false;
+  const limpio = nombre.trim().slice(0, 120);
+  if (limpio && limpio !== existente.nombre) { existente.nombre = limpio; cambio = true; }
+  if (externos.muxLlave && externos.muxLlave !== existente.muxLlave) { existente.muxLlave = externos.muxLlave; cambio = true; }
+  if (externos.observacionUrl && externos.observacionUrl !== existente.observacionUrl) { existente.observacionUrl = externos.observacionUrl; cambio = true; }
+  if (cambio) sube(existente);
+  return { sesion: existente, yaExistia: true, cambio };
 }
 
 function viva(s: Sesion) {

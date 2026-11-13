@@ -17,6 +17,7 @@ const PUERTO_TALKS = 8795;
 const WEB = `http://localhost:${PUERTO_TALKS}`;
 const SUPABASE = `http://localhost:${PUERTO_FALSO}`;
 
+const LLAVE_DEL_HUB = 'llave-del-hub-de-prueba'; // inventada
 const DEL_EQUIPO = 'moderadora@ejemplo.test';
 const SIN_PERMISO = 'visita@ejemplo.test'; // existe en «Supabase» pero no está en EQUIPO_PERMITIDO
 const DESCONOCIDO = 'nadie@ejemplo.test'; // no existe en «Supabase»
@@ -85,7 +86,7 @@ async function main() {
   await new Promise<void>((ok) => falso.listen(PUERTO_FALSO, ok));
 
   const entorno = { ...process.env, PORT: String(PUERTO_TALKS), AUTH_MODE: 'supabase', NODE_ENV: 'development', URL_PUBLICA: WEB,
-    SUPABASE_URL: SUPABASE, SUPABASE_ANON_KEY: 'llave-anon-de-mentira', EQUIPO_PERMITIDO: DEL_EQUIPO, HUB_API_KEY: '' };
+    SUPABASE_URL: SUPABASE, SUPABASE_ANON_KEY: 'llave-anon-de-mentira', EQUIPO_PERMITIDO: DEL_EQUIPO, HUB_API_KEY: LLAVE_DEL_HUB };
   const tsx = path.join(RAIZ, 'node_modules/.bin/tsx');
   const hijo = spawn(tsx, ['--env-file', path.join(RAIZ, '.env'), path.join(RAIZ, 'server/index.ts')], { cwd: trabajo, env: entorno, stdio: ['ignore', 'pipe', 'pipe'] });
   let salida = '';
@@ -104,6 +105,14 @@ async function main() {
     anotar('Sin sesión, /api/equipo/yo responde 401', sinSesion.status === 401, `estado ${sinSesion.status}`);
     const conMentira = await fetch(`${WEB}/api/equipo/yo`, { headers: { authorization: 'Bearer inventado', 'x-equipo-email': DEL_EQUIPO } });
     anotar('Un token inventado (aunque mande x-equipo-email) no pasa', conMentira.status === 401, `estado ${conMentira.status}`);
+
+    // La puerta del Hub: crear una sesión por API pide la llave del Hub (o ser del equipo con sesión).
+    const cuerpo = JSON.stringify({ nombre: 'Prueba', externoId: 'evento-1' });
+    const POST = (autorizacion?: string) => fetch(`${WEB}/api/v1/sesiones`, { method: 'POST', headers: { 'content-type': 'application/json', ...(autorizacion ? { authorization: autorizacion } : {}) }, body: cuerpo });
+    anotar('Crear una sesión por API sin credenciales da 401', (await POST()).status === 401);
+    anotar('Con una llave equivocada da 401', (await POST('Bearer llave-equivocada')).status === 401);
+    const conLlave = await POST(`Bearer ${LLAVE_DEL_HUB}`);
+    anotar('Con la llave del Hub se crea (201) y trae los links', conLlave.status === 201 && !!(await conLlave.json()).linkParticipantes, `estado ${conLlave.status}`);
 
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chrome-login-'));
     const nav = await puppeteer.launch({ executablePath: CHROME, headless: true, userDataDir: dir, args: ['--no-first-run', '--no-default-browser-check'] });

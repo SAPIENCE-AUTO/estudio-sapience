@@ -104,6 +104,30 @@ async function main() {
   const sinAviso = await fetch(`http://localhost:8787/api/p/${creada.codigo}/entrar`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nombre: 'Intruso' }) });
   anotar('Sin aceptar el aviso de privacidad el servidor no deja entrar', sinAviso.status === 400, `estado ${sinAviso.status}`);
 
+  // Integración con el Hub: una sesión por evento del calendario, y la llave de Mux nunca sale del servidor.
+  {
+    const API = 'http://localhost:8787/api';
+    const cab = { 'content-type': 'application/json', 'x-equipo-email': EQUIPO.email, 'x-equipo-nombre': EQUIPO.nombre };
+    const LLAVE = 'llave-de-prueba-e2e-1234'; // inventada
+    const evento = `evento-prueba-${Date.now()}`;
+    const crear = (cuerpo: object) => fetch(`${API}/v1/sesiones`, { method: 'POST', headers: cab, body: JSON.stringify(cuerpo) });
+    const datos = { nombre: 'Prueba Hub', externoId: evento, muxStreamKey: LLAVE, observacionUrl: 'https://ejemplo.test/s/abc' };
+    const r1 = await crear(datos); const t1 = await r1.text(); const j1 = JSON.parse(t1);
+    const r2 = await crear(datos); const j2 = await r2.json();
+    anotar('Crear la sesión de un evento devuelve sus links y dice que la transmisión está lista', r1.status === 201 && !!j1.linkParticipantes && !!j1.linkEquipo && j1.transmision === 'lista', `estado ${r1.status}`);
+    anotar('Pedirla otra vez devuelve la misma sesión, no crea otra', r2.status === 200 && j2.id === j1.id && j2.yaExistia === true);
+    anotar('La respuesta NUNCA incluye la llave de Mux', !t1.includes(LLAVE));
+    anotar('El listado de sesiones tampoco la incluye', !(await (await fetch(`${API}/sesiones`, { headers: cab })).text()).includes(LLAVE));
+    const consulta = await fetch(`${API}/v1/sesiones/evento/${evento}`, { headers: cab });
+    const tc = await consulta.text();
+    anotar('Se puede consultar la sesión de un evento, sin la llave', consulta.status === 200 && JSON.parse(tc).id === j1.id && !tc.includes(LLAVE));
+    anotar('Un evento sin sesión da 404', (await fetch(`${API}/v1/sesiones/evento/no-existe-${Date.now()}`, { headers: cab })).status === 404);
+    anotar('Una llave con formato raro se rechaza', (await crear({ nombre: 'X', muxStreamKey: 'llave con espacios y "comillas"' })).status === 400);
+    anotar('Una página de observación que no es https se rechaza', (await crear({ nombre: 'X', observacionUrl: 'http://ejemplo.test/s/abc' })).status === 400);
+    const sinLlave = await (await crear({ nombre: 'Sin llave', externoId: `${evento}-b` })).json();
+    anotar('Sin llave de Mux la sesión se crea y dice «sin-llave»', sinLlave.transmision === 'sin-llave');
+  }
+
   // Un Chrome distinto por cada actor (consola y participantes): así todas las pantallas están al frente y ninguna se frena,
   // como pasaría en computadoras distintas.
   const lanzados: { cerrar: () => Promise<void> }[] = [];

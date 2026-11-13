@@ -51,12 +51,13 @@ export function sesionPorCodigo(codigo: string): d.Sesion | undefined {
 }
 
 // ---------- crear ----------
-export function crearSesion(nombre: string): d.Sesion {
-  const s = d.nuevaSesion(nombre);
-  sesiones[s.id] = s;
-  guardarPronto(sesiones);
-  return s;
+/** Crea la sesión (o, si viene el evento del Hub y ya existe, la devuelve). */
+export function crearSesion(nombre: string, externos: d.DatosExternos = {}): { sesion: d.Sesion; yaExistia: boolean } {
+  const r = d.crearOActualizar(sesiones, nombre, externos);
+  if (r.cambio) { guardarPronto(sesiones); if (r.yaExistia) difundir(r.sesion); }
+  return { sesion: r.sesion, yaExistia: r.yaExistia };
 }
+export const sesionDelEvento = (externoId: string) => d.sesionDelEvento(sesiones, externoId);
 
 // ---------- participantes ----------
 export async function entrarParticipante(codigo: string, nombre: string): Promise<RespuestaEntrar> {

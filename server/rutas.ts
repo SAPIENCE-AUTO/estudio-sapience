@@ -5,6 +5,7 @@ import { ErrorDominio, idMiembro } from './dominio';
 import { PersonaDesconectada } from './livekit';
 import { equipoDesdeSolicitud, ErrorAcceso, esLlaveDelHub, firmarBoleto, pasePorEncabezado, type DatosPase, type UsuarioEquipo } from './auth';
 import * as servicio from './servicio';
+import type { Sesion } from './dominio';
 import { AJUSTES_DISENO, FONDOS_DISENO, FORMAS_DISENO, TIPOS_DISENO } from '../compartido/tipos';
 
 type ConEquipo = Request & { equipo?: UsuarioEquipo };
@@ -47,11 +48,32 @@ export function crearRutas(): express.Router {
   });
 
   // --- Para el Hub (llave) y para el equipo: crear una sesión ---
+  // Lo que se devuelve de una sesión creada desde fuera. NUNCA incluye la llave de Mux: solo dice si hay o no una configurada.
+  const respuestaDeCreacion = (s: Sesion, yaExistia: boolean) => ({
+    id: s.id, nombre: s.nombre, codigo: s.codigo, ...linksDeSesion(s), externoId: s.externoId ?? null, yaExistia,
+    transmision: s.muxLlave ? 'lista' : 'sin-llave',
+  });
+
+  // El Hub crea la sesión de un evento del calendario (con su llave de Mux). Apretar el botón dos veces devuelve la misma.
   r.post('/v1/sesiones', ruta(async (req, res) => {
     if (!esLlaveDelHub(req)) await equipoDesdeSolicitud(req); // lanza ErrorAcceso si tampoco es del equipo
-    const { nombre } = z.object({ nombre: z.string().min(1).max(120) }).parse(req.body);
-    const s = servicio.crearSesion(nombre);
-    res.status(201).json({ id: s.id, nombre: s.nombre, codigo: s.codigo, ...linksDeSesion(s) });
+    const { nombre, externoId, muxStreamKey, observacionUrl } = z.object({
+      nombre: z.string().min(1).max(120),
+      externoId: z.string().min(1).max(120).optional(),
+      // Las llaves de Mux son letras, números y guiones; se valida porque va dentro de una dirección de transmisión.
+      muxStreamKey: z.string().regex(/^[A-Za-z0-9-]{8,100}$/, 'La llave de transmisión no tiene el formato de Mux').optional(),
+      observacionUrl: z.string().url().max(500).startsWith('https://').optional(),
+    }).parse(req.body);
+    const { sesion, yaExistia } = servicio.crearSesion(nombre, { externoId, muxLlave: muxStreamKey, observacionUrl });
+    res.status(yaExistia ? 200 : 201).json(respuestaDeCreacion(sesion, yaExistia));
+  }));
+
+  // Los links de la sesión de un evento (el Hub los muestra cuando ya se crearon).
+  r.get('/v1/sesiones/evento/:externoId', ruta(async (req, res) => {
+    if (!esLlaveDelHub(req)) await equipoDesdeSolicitud(req);
+    const s = servicio.sesionDelEvento(req.params.externoId as string);
+    if (!s) throw new ErrorDominio('NO_ENCONTRADO', 'Ese evento todavía no tiene sesión en Talks');
+    res.json(respuestaDeCreacion(s, true));
   }));
 
   // --- Equipo ---
