@@ -60,10 +60,15 @@ function Indicador({ tono, icono: Icono, children, ...resto }: { tono: 'atencion
   return <span {...resto} className={`inline-flex items-center gap-1 whitespace-nowrap rounded-lg px-2 py-0.5 text-[11px] font-semibold ${estilos}`}><Icono size={12} aria-hidden="true" />{children}</span>;
 }
 
-function BotonRedondo({ activo, apagado, etiqueta, onClick, children, ...resto }: { activo: boolean; apagado: React.ReactNode; etiqueta: [string, string]; onClick: () => void; children: React.ReactNode; 'data-testid'?: string }) {
+/** Mic y cámara: círculo azul oscuro encendido, rojo sólido apagado. El ícono cambia (tachado), así que no depende solo del color. */
+function BotonControl({ activo, encendido, apagado, onClick, ...resto }: {
+  activo: boolean; encendido: { icono: React.ReactNode; texto: string }; apagado: { icono: React.ReactNode; texto: string }; onClick: () => void; 'data-testid'?: string;
+}) {
+  const e = activo ? encendido : apagado;
   return (
-    <button {...resto} aria-label={activo ? etiqueta[0] : etiqueta[1]} title={activo ? etiqueta[0] : etiqueta[1]} onClick={onClick}
-      className={`flex h-10 w-10 items-center justify-center rounded-full ${activo ? 'bg-gris-boton text-teal' : 'bg-peligro-fondo text-peligro'}`}>{activo ? children : apagado}</button>
+    <button {...resto} aria-pressed={!activo} title={e.texto} onClick={onClick}
+      aria-label={e.texto}
+      className={`flex h-12 w-12 items-center justify-center rounded-full text-white ${activo ? 'bg-teal hover:bg-[#0b3140]' : 'bg-peligro hover:bg-[#9f1818]'}`}>{e.icono}</button>
   );
 }
 
@@ -199,8 +204,8 @@ export default function Consola() {
               <Lienzo data-testid="lista-escenario" items={enEscena} vacio="Nadie en el escenario" />
             </div>
             <div className="flex flex-wrap items-center justify-center gap-2" data-testid="controles">
-              <BotonRedondo data-testid="boton-mic" activo={micOn} apagado={<MicOff size={18} />} etiqueta={['Silenciar mi micrófono', 'Activar mi micrófono']} onClick={() => setMicOn(!micOn)}><Mic size={18} /></BotonRedondo>
-              <BotonRedondo data-testid="boton-cam" activo={camOn} apagado={<VideoOff size={18} />} etiqueta={['Apagar mi cámara', 'Encender mi cámara']} onClick={() => setCamOn(!camOn)}><IconoVideo size={18} /></BotonRedondo>
+              <BotonControl data-testid="boton-mic" activo={micOn} encendido={{ icono: <Mic size={22} aria-hidden="true" />, texto: 'Silenciar mi micrófono' }} apagado={{ icono: <MicOff size={22} aria-hidden="true" />, texto: 'Activar mi micrófono' }} onClick={() => setMicOn(!micOn)} />
+              <BotonControl data-testid="boton-cam" activo={camOn} encendido={{ icono: <IconoVideo size={22} aria-hidden="true" />, texto: 'Apagar mi cámara' }} apagado={{ icono: <VideoOff size={22} aria-hidden="true" />, texto: 'Encender mi cámara' }} onClick={() => setCamOn(!camOn)} />
               <Boton data-testid="mi-escenario" onClick={alternarEscenario}>
                 <span className="inline-flex items-center gap-1.5"><ArrowRightLeft size={14} aria-hidden="true" />{enEscenario ? 'Ir a backstage' : 'Subirme al escenario'}</span>
               </Boton>

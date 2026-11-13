@@ -229,6 +229,11 @@ function Dentro({ entrada, camId, micId }: { entrada: RespuestaEntrar; camId?: s
   const silenciado = !!estado?.yo.silenciado;
   const silenciadoRef = useRef(false);
   silenciadoRef.current = silenciado;
+  // Lo que la persona decide con sus botones manda SIEMPRE: cambiar de lugar o de equipo no le vuelve a encender nada.
+  const [quiereMic, setQuiereMic] = useState(true);
+  const [quiereCam, setQuiereCam] = useState(true);
+  const quiere = useRef({ mic: true, cam: true });
+  quiere.current = { mic: quiereMic, cam: quiereCam };
   useEffect(() => {
     if (room && conectadoLK && silenciado) void room.localParticipant.setMicrophoneEnabled(false).catch(() => undefined);
   }, [room, conectadoLK, silenciado]);
@@ -245,16 +250,17 @@ function Dentro({ entrada, camId, micId }: { entrada: RespuestaEntrar; camId?: s
       }
       proteger(room, permitidosDeParticipante(lugar, equipoIds ? equipoIds.split(',') : [], verdeCon));
       if (!(await esperarPermisoDePublicar(room)) || cancelado) return;
-      if (!silenciadoRef.current) await room.localParticipant.setMicrophoneEnabled(true).catch(() => undefined);
-      await room.localParticipant.setCameraEnabled(true).catch(() => undefined);
+      await room.localParticipant.setMicrophoneEnabled(quiere.current.mic && !silenciadoRef.current).catch(() => undefined);
+      await room.localParticipant.setCameraEnabled(quiere.current.cam).catch(() => undefined);
     })();
     return () => { cancelado = true; };
   }, [room, lugar, equipoIds, verdeCon, conectadoLK]);
 
-  const camaraLocal = room?.localParticipant.getTrackPublication(Track.Source.Camera)?.track ?? null;
+  const pubCamara = room?.localParticipant.getTrackPublication(Track.Source.Camera);
+  const camaraLocal = pubCamara && !pubCamara.isMuted ? pubCamara.track ?? null : null;
   const micEncendido = !!room?.localParticipant.isMicrophoneEnabled;
   const camEncendida = !!room?.localParticipant.isCameraEnabled;
-  const vistaPrevia = useVistaPrevia(camId, lugar === 'lobby' || !camaraLocal);
+  const vistaPrevia = useVistaPrevia(camId, lugar === 'lobby' || (quiereCam && !camaraLocal));
   const nivel = useNivelMicrofono(micId, lugar === 'lobby');
 
   if (!estado) return <Marco><p className="text-sm text-tenue">Conectando…</p></Marco>;
@@ -331,15 +337,15 @@ function Dentro({ entrada, camId, micId }: { entrada: RespuestaEntrar; camId?: s
 
       {yo.lugar !== 'lobby' && (
         <div className="mx-5 mb-5 mt-auto flex justify-center gap-6 rounded-3xl border border-borde bg-tarjeta px-4 py-3">
-          <button aria-label={silenciado ? 'El equipo silenció tu micrófono' : micEncendido ? 'Silenciar micrófono' : 'Activar micrófono'} data-testid="boton-mic" disabled={silenciado}
-            onClick={() => void room?.localParticipant.setMicrophoneEnabled(!micEncendido)}
-            className={`flex h-[52px] w-[52px] items-center justify-center rounded-full ${micEncendido ? 'bg-ok-fondo text-ok' : 'bg-peligro-fondo text-peligro'}`}>
-            {micEncendido ? <Mic size={22} /> : <MicOff size={22} />}
+          <button aria-label={silenciado ? 'El equipo silenció tu micrófono' : micEncendido ? 'Silenciar micrófono' : 'Activar micrófono'} title={silenciado ? 'El equipo silenció tu micrófono' : undefined} data-testid="boton-mic" disabled={silenciado}
+            onClick={() => { const nuevo = !micEncendido; setQuiereMic(nuevo); void room?.localParticipant.setMicrophoneEnabled(nuevo); }}
+            className={`flex h-[56px] w-[56px] items-center justify-center rounded-full text-white ${micEncendido ? 'bg-teal' : 'bg-peligro'}`}>
+            {micEncendido ? <Mic size={24} aria-hidden="true" /> : <MicOff size={24} aria-hidden="true" />}
           </button>
           <button aria-label={camEncendida ? 'Apagar cámara' : 'Encender cámara'} data-testid="boton-cam"
-            onClick={() => void room?.localParticipant.setCameraEnabled(!camEncendida)}
-            className={`flex h-[52px] w-[52px] items-center justify-center rounded-full ${camEncendida ? 'bg-gris-boton text-teal' : 'bg-peligro-fondo text-peligro'}`}>
-            {camEncendida ? <IconoVideo size={22} /> : <VideoOff size={22} />}
+            onClick={() => { const nuevo = !camEncendida; setQuiereCam(nuevo); void room?.localParticipant.setCameraEnabled(nuevo); }}
+            className={`flex h-[56px] w-[56px] items-center justify-center rounded-full text-white ${camEncendida ? 'bg-teal' : 'bg-peligro'}`}>
+            {camEncendida ? <IconoVideo size={24} aria-hidden="true" /> : <VideoOff size={24} aria-hidden="true" />}
           </button>
         </div>
       )}

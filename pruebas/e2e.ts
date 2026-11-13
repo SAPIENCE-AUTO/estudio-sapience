@@ -341,6 +341,44 @@ async function main() {
       anotar(`${a} decide encender su micrófono y funciona`, vuelve);
     }
 
+    // ── Cada participante controla su cámara y su micrófono en TODO momento (backstage, sala verde y escenario) ──
+    {
+      const disp = () => paginas[a].evaluate(() => { const lp = (window as unknown as { __sala: { localParticipant: { isCameraEnabled: boolean; isMicrophoneEnabled: boolean } } }).__sala.localParticipant; return { cam: lp.isCameraEnabled, mic: lp.isMicrophoneEnabled }; });
+      const esperarDisp = async (cam: boolean, mic: boolean, ms = 5000) => { const t0 = ahora(); while (ahora() - t0 < ms) { const d = await disp(); if (d.cam === cam && d.mic === mic) return true; await dormir(100); } return false; };
+      const probar = async (lugar: string) => {
+        await esperar(paginas[a], JS.lugar(lugar));
+        anotar(`${a} en ${lugar}: empieza con cámara y micrófono encendidos`, await esperarDisp(true, true));
+        await clic(paginas[a], 'boton-cam'); await clic(paginas[a], 'boton-mic');
+        const apagados = await esperarDisp(false, false);
+        await dormir(2500); // que ningún cambio de la pantalla se los vuelva a encender
+        const d = await disp();
+        if (lugar === 'backstage') await foto(paginas[a], '9-participante-con-camara-y-microfono-apagados');
+        anotar(`${a} en ${lugar}: apaga su cámara y su micrófono y se quedan apagados`, apagados && !d.cam && !d.mic, JSON.stringify(d));
+      };
+      await probar('backstage');
+      // Lo que apagó sigue apagado al cambiar de lugar (la sala verde, el escenario): la decisión es suya.
+      await clic(consola, `verde-${a}`);
+      await esperar(paginas[a], JS.lugar('verde'));
+      await dormir(2500);
+      const enVerde = await disp();
+      anotar(`${a}: al regresarlo a la sala verde, lo que apagó sigue apagado`, !enVerde.cam && !enVerde.mic, JSON.stringify(enVerde));
+      await clic(paginas[a], 'boton-cam'); await clic(paginas[a], 'boton-mic');
+      anotar(`${a} en verde: vuelve a encender cámara y micrófono por su cuenta`, await esperarDisp(true, true));
+      await clic(paginas[a], 'boton-cam'); await clic(paginas[a], 'boton-mic');
+      anotar(`${a} en verde: los vuelve a apagar y se quedan apagados`, await esperarDisp(false, false) && (await dormir(2000), !(await disp()).cam));
+      await clic(consola, `pasar-${a}`);
+      await esperar(paginas[a], JS.lugar('backstage'));
+      await clic(consola, `subir-${a}`);
+      await esperar(paginas[a], JS.lugar('escenario'));
+      await dormir(2500);
+      const enEscenario = await disp();
+      anotar(`${a}: al subirlo al escenario, lo que apagó sigue apagado`, !enEscenario.cam && !enEscenario.mic, JSON.stringify(enEscenario));
+      await clic(paginas[a], 'boton-cam'); await clic(paginas[a], 'boton-mic');
+      anotar(`${a} en el escenario: enciende cámara y micrófono por su cuenta`, await esperarDisp(true, true));
+      await clic(consola, `bajar-${a}`);
+      await esperar(paginas[a], JS.lugar('backstage'));
+    }
+
     // ── Regresar al lobby ──
     {
       const t0 = ahora();
