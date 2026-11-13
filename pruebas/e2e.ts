@@ -129,7 +129,7 @@ async function main() {
 
     // ── Tres participantes entran por el link único ──
     const paginas: Record<string, Page> = {};
-    for (const nombre of NOMBRES) {
+    const entrarComo = async (nombre: string): Promise<Page> => {
       const p = await nuevaPantalla();
       await p.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
       await p.evaluateOnNewDocument(MEDIOS_FALSOS);
@@ -150,8 +150,9 @@ async function main() {
       await esperar(p, `!document.querySelector('[data-testid="todo-listo"]')?.disabled && !!document.querySelector('[data-testid="todo-listo"]')`);
       await p.click('[data-testid="todo-listo"]');
       await esperar(p, JS.lugar('lobby'));
-      paginas[nombre] = p;
-    }
+      return p;
+        };
+    for (const nombre of NOMBRES) paginas[nombre] = await entrarComo(nombre);
     for (const n of NOMBRES) await esperar(consola, JS.enSeccion('lista-lobby', n));
     anotar('Los tres entran al lobby y la consola los ve', true);
     await dormir(800);
@@ -414,6 +415,33 @@ async function main() {
       await foto(consola, '10-consola-vinetas-redondas');
       await elegir('lado');
       anotar('Elegir «lado a lado» lo cambia en todas las pantallas', await todasVen('lado'));
+      await elegir('tira-abajo');
+      anotar('Elegir «foco con tira abajo» lo cambia en todas las pantallas', await todasVen('tira-abajo'));
+      const posicion = (testid: string, quien: string) => consola.evaluate((id: string, q: string) => { const r = document.querySelector(`[data-testid="${id}"] [data-testid="mosaico-${q}"]`)?.getBoundingClientRect(); return r ? { arriba: r.top, ancho: r.width } : null; }, testid, quien);
+      const [pg, pc] = await Promise.all([posicion('lista-escenario', b), posicion('lista-escenario', a)]); // Beto sigue fijado: es el grande
+      anotar('En tira abajo la persona grande queda arriba y las demás debajo', !!pg && !!pc && pg.arriba < pc.arriba && pg.ancho > pc.ancho * 1.3, JSON.stringify({ grande: pg, otra: pc }));
+      await elegir('fila');
+      anotar('Elegir «fila centrada» lo cambia en todas las pantallas', await todasVen('fila'));
+
+      // Forma, ajuste de la imagen y fondo: también los ven todos igual.
+      const atributo = (pagina: Page, testid: string, nombre: string) => pagina.evaluate((id: string, n: string) => document.querySelector(`[data-testid="${id}"]`)?.getAttribute(n), testid, nombre);
+      const todasCon = async (nombre: string, valor: string) => (await Promise.all([atributo(consola, 'lista-escenario', nombre), atributo(paginas[a], 'escenario', nombre), atributo(paginas[b], 'escenario', nombre)])).every((v) => v === valor);
+      await abrir(); await clic(consola, 'forma-circulo'); await dormir(500);
+      anotar('Elegir «círculo» lo cambia en todas las pantallas', await todasCon('data-forma', 'circulo'));
+      const caja = await consola.evaluate((q: string) => { const r = document.querySelector(`[data-testid="lista-escenario"] [data-testid="mosaico-${q}"]`)?.getBoundingClientRect(); return r ? { ancho: r.width, alto: r.height } : null; }, a);
+      anotar('En círculo cada viñeta es cuadrada por dentro (ancho igual al alto), incluido el moderador', !!caja && Math.abs(caja.ancho - caja.alto) <= 2, JSON.stringify(caja));
+      const cajaMod = await consola.evaluate(() => { const r = document.querySelector('[data-testid="lista-escenario"] [data-testid="mosaico-Marina"]')?.getBoundingClientRect(); return r ? { ancho: r.width, alto: r.height } : null; });
+      anotar('El moderador también queda en círculo', !!cajaMod && Math.abs(cajaMod.ancho - cajaMod.alto) <= 2, JSON.stringify(cajaMod));
+      await clic(consola, 'ajuste-completo'); await dormir(500);
+      anotar('Elegir imagen «completa» lo cambia en todas las pantallas', await todasCon('data-ajuste', 'completo'));
+      const ajusteVideo = await consola.evaluate((q: string) => { const v = document.querySelector(`[data-testid="lista-escenario"] [data-testid="mosaico-${q}"] video`); return v ? getComputedStyle(v).objectFit : 'sin video'; }, a);
+      anotar('Con imagen completa el video no se recorta (object-fit: contain)', ajusteVideo === 'contain', ajusteVideo);
+      await clic(consola, 'fondo-negro'); await dormir(500);
+      anotar('Elegir fondo negro lo cambia en todas las pantallas', await todasCon('data-fondo', 'negro'));
+      const color = await consola.evaluate(() => getComputedStyle(document.querySelector('[data-testid="lista-escenario"]')!).backgroundColor);
+      anotar('El fondo negro se pinta de verdad', color === 'rgb(20, 24, 26)', color);
+      await foto(consola, '11-consola-fila-circulos-completo-negro');
+      await clic(consola, 'forma-redondeada'); await clic(consola, 'ajuste-llenar'); await clic(consola, 'fondo-gris'); await dormir(400);
       await elegir('auto');
       anotar('Regresar a automático lo cambia en todas las pantallas', await todasVen('auto'));
       await degradar(b); await degradar(a);
@@ -426,6 +454,24 @@ async function main() {
       await esperar(paginas[c], JS.lugar('lobby'));
       await esperar(consola, JS.enSeccion('lista-lobby', c));
       anotar(`Regresar a ${c} al lobby`, true, `${Math.round(ahora() - t0)} ms`);
+    }
+
+    // ── Alguien se desconecta estando en backstage: se le puede regresar al lobby y se queda ahí (antes volvía a backstage) ──
+    {
+      const dora = await entrarComo('Dora');
+      await esperar(consola, JS.enSeccion('lista-lobby', 'Dora'));
+      await clic(consola, 'llamar-Dora'); await esperar(dora, JS.lugar('verde'));
+      await clic(consola, 'pasar-Dora'); await esperar(consola, JS.enSeccion('lista-backstage', 'Dora'));
+      await dora.close(); // se cae su conexión
+      await esperar(consola, `document.querySelector('[data-testid="tarjeta-backstage-Dora"]')?.innerText.includes('Sin conexión')`, null, 20000);
+      anotar('Al desconectarse, la consola marca «Sin conexión» a quien estaba en backstage', true);
+      await dormir(6000); // para que LiveKit ya no la encuentre
+      await clic(consola, 'lobby-Dora');
+      await esperar(consola, JS.enSeccion('lista-lobby', 'Dora'), null, 8000);
+      await dormir(3000);
+      const sigue = await consola.evaluate(() => !!document.querySelector('[data-testid="lista-lobby"] [data-testid="fila-lobby-Dora"]') && !document.querySelector('[data-testid="lista-backstage"] [data-testid="mosaico-Dora"]'));
+      const aviso = await consola.evaluate(() => document.querySelector('[data-testid="aviso"]')?.textContent ?? '');
+      anotar('Regresar al lobby a alguien desconectado funciona y se queda ahí', sigue, aviso ? `aviso: ${aviso}` : '');
     }
 
     // ── Terminar ──

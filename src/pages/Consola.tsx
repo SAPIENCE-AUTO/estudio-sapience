@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Room, Track, type RemoteAudioTrack } from 'livekit-client';
-import { ArrowRightLeft, BellRing, Copy, DoorOpen, EyeOff, LayoutGrid, Mic, MicOff, Video as IconoVideo, VideoOff } from 'lucide-react';
-import type { Diseno, EstadoEquipo, ParticipantePublico, TipoDiseno } from '../../compartido/tipos';
+import { ArrowRightLeft, BellRing, Copy, DoorOpen, EyeOff, LayoutGrid, Mic, MicOff, Video as IconoVideo, VideoOff, WifiOff, X } from 'lucide-react';
+import type { AjusteDiseno, Diseno, EstadoEquipo, FondoDiseno, FormaDiseno, ParticipantePublico, TipoDiseno } from '../../compartido/tipos';
+import { tieneFoco } from '../lib/acomodo';
 import { api } from '../lib/api';
 import { useConsola, type Accion } from '../lib/useConsola';
 import { camaraDe, proteger, useCambiosDeSala } from '../lib/sala';
@@ -81,6 +82,16 @@ function ClicParaMover({ texto, onClick, ...resto }: { texto: string; onClick: (
   );
 }
 
+/** La persona se desconectó: su viñeta se apaga y lo dice con ícono y texto. Se le puede mover igual (a lobby, a la sala verde...). */
+function SinConexion() {
+  return (
+    <>
+      <div className="pointer-events-none absolute inset-0 bg-white/60" aria-hidden="true" />
+      <span data-testid="sin-conexion" className="pointer-events-none absolute right-2 top-2 z-[2] inline-flex items-center gap-1 rounded-md bg-atencion px-1.5 py-0.5 text-[11px] font-semibold text-white"><WifiOff size={11} aria-hidden="true" />Sin conexión</span>
+    </>
+  );
+}
+
 /** Quitar o permitir el micrófono de un participante. Permitirlo no lo enciende: él decide cuándo hablar. */
 function BotonMicrofono({ p, sid, onError }: { p: ParticipantePublico; sid: string; onError: (m: string) => void }) {
   const titulo = p.silenciado ? `Permitir que ${p.nombre} hable` : `Silenciar a ${p.nombre}`;
@@ -93,14 +104,31 @@ function BotonMicrofono({ p, sid, onError }: { p: ParticipantePublico; sid: stri
   );
 }
 
-const DISENOS: { tipo: TipoDiseno; nombre: string }[] = [
-  { tipo: 'auto', nombre: 'Cuadrícula automática' },
-  { tipo: 'foco', nombre: 'Foco en una persona' },
+const ACOMODOS: { tipo: TipoDiseno; nombre: string }[] = [
+  { tipo: 'auto', nombre: 'Cuadrícula' },
+  { tipo: 'foco', nombre: 'Foco, tira al lado' },
+  { tipo: 'tira-abajo', nombre: 'Foco, tira abajo' },
   { tipo: 'lado', nombre: 'Lado a lado' },
-  { tipo: 'redondas', nombre: 'Viñetas redondas' },
+  { tipo: 'fila', nombre: 'Fila centrada' },
+  { tipo: 'redondas', nombre: 'Foco con viñetas flotantes' },
+];
+const FORMAS: { forma: FormaDiseno; nombre: string; clase: string }[] = [
+  { forma: 'cuadrada', nombre: 'Cuadrada', clase: 'rounded-[2px]' },
+  { forma: 'redondeada', nombre: 'Redondeada', clase: 'rounded-md' },
+  { forma: 'circulo', nombre: 'Círculo', clase: 'rounded-full' },
+];
+const AJUSTES: { ajuste: AjusteDiseno; nombre: string }[] = [
+  { ajuste: 'llenar', nombre: 'Llenar (recorta)' },
+  { ajuste: 'completo', nombre: 'Completo (sin recortar)' },
+];
+const FONDOS: { fondo: FondoDiseno; nombre: string; color: string }[] = [
+  { fondo: 'gris', nombre: 'Gris', color: '#dce8ec' },
+  { fondo: 'blanco', nombre: 'Blanco', color: '#ffffff' },
+  { fondo: 'negro', nombre: 'Negro', color: '#14181a' },
+  { fondo: 'marca', nombre: 'Azul', color: '#0f3d4d' },
 ];
 
-/** Dibujito de cada diseño, para elegirlo de un vistazo. */
+/** Dibujito de cada acomodo, para elegirlo de un vistazo. */
 function Miniatura({ tipo }: { tipo: TipoDiseno }) {
   const c = 'rounded-[2px] bg-silueta';
   return (
@@ -108,13 +136,15 @@ function Miniatura({ tipo }: { tipo: TipoDiseno }) {
       {tipo === 'auto' && <div className="grid flex-1 grid-cols-2 grid-rows-2 gap-[3px]">{[0, 1, 2, 3].map((i) => <div key={i} className={c} />)}</div>}
       {tipo === 'lado' && <><div className={`flex-1 ${c}`} /><div className={`flex-1 ${c}`} /></>}
       {tipo === 'foco' && <><div className={`flex-[3] ${c}`} /><div className="flex flex-1 flex-col gap-[3px]">{[0, 1, 2].map((i) => <div key={i} className={`flex-1 ${c}`} />)}</div></>}
+      {tipo === 'tira-abajo' && <div className="flex flex-1 flex-col gap-[3px]"><div className={`flex-[3] ${c}`} /><div className="flex flex-1 gap-[3px]">{[0, 1, 2].map((i) => <div key={i} className={`flex-1 ${c}`} />)}</div></div>}
+      {tipo === 'fila' && <div className="flex flex-1 items-center justify-center gap-[3px]">{[0, 1, 2, 3].map((i) => <div key={i} className={`h-[85%] w-[16%] ${c}`} />)}</div>}
       {tipo === 'redondas' && <><div className={`flex-1 ${c}`} /><div className="absolute bottom-1 right-1 flex gap-[2px]">{[0, 1].map((i) => <div key={i} className="h-2.5 w-2.5 rounded-full border border-white bg-silueta" />)}</div></>}
     </div>
   );
 }
 
-/** Botón «Diseño» con su ventana: elige cómo se acomoda el escenario y a quién se pone grande. Lo ven todos igual. */
-function SelectorDiseno({ diseno, personas, onElegir }: { diseno: Diseno; personas: { id: string; nombre: string }[]; onElegir: (tipo: TipoDiseno, fijado: string | null) => void }) {
+/** Botón «Diseño» con su ventana: acomodo, forma de la viñeta, ajuste de la imagen, fondo y a quién se pone grande. Lo ven todos igual. */
+function SelectorDiseno({ diseno, personas, onElegir }: { diseno: Diseno; personas: { id: string; nombre: string }[]; onElegir: (parche: Partial<Diseno>) => void }) {
   const [abierto, setAbierto] = useState(false);
   const caja = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -123,30 +153,57 @@ function SelectorDiseno({ diseno, personas, onElegir }: { diseno: Diseno; person
     document.addEventListener('mousedown', fuera);
     return () => document.removeEventListener('mousedown', fuera);
   }, [abierto]);
-  const actual = DISENOS.find((d) => d.tipo === diseno.tipo)?.nombre ?? '';
-  const usaFijado = diseno.tipo === 'foco' || diseno.tipo === 'redondas';
+  const actual = ACOMODOS.find((d) => d.tipo === diseno.tipo)?.nombre ?? '';
+  const usaFijado = tieneFoco(diseno.tipo);
+  const opcion = (activa: boolean) => `rounded-lg border px-2.5 py-1.5 text-[12px] font-semibold ${activa ? 'border-teal bg-teal-claro text-teal' : 'border-borde text-texto'}`;
+  const titulo = 'mb-1.5 mt-3 text-[11px] font-semibold uppercase tracking-wide text-tenue';
   return (
     <div className="relative" ref={caja}>
       <button data-testid="boton-diseno" onClick={() => setAbierto(!abierto)} aria-expanded={abierto} className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg bg-gris-boton px-3 text-[13px] font-semibold text-teal">
         <LayoutGrid size={14} aria-hidden="true" />Diseño: {actual}
       </button>
       {abierto && (
-        <div role="dialog" aria-label="Diseño del escenario" className="absolute bottom-full left-1/2 z-20 mb-2 w-[300px] -translate-x-1/2 rounded-2xl border border-borde bg-tarjeta p-3 shadow-lg">
-          <div className="grid grid-cols-2 gap-2">
-            {DISENOS.map((d) => (
-              <button key={d.tipo} data-testid={`diseno-${d.tipo}`} onClick={() => onElegir(d.tipo, diseno.fijado)}
-                className={`flex flex-col gap-1.5 rounded-xl border p-2 text-left text-[12px] font-semibold ${diseno.tipo === d.tipo ? 'border-teal bg-teal-claro' : 'border-borde'}`}>
+        <div role="dialog" aria-label="Diseño del escenario" className="fixed right-4 top-16 z-30 max-h-[calc(100vh-5rem)] w-[320px] overflow-y-auto rounded-2xl border border-borde bg-tarjeta p-3 shadow-lg">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-[13px] font-semibold">Diseño del escenario</span>
+            <button data-testid="cerrar-diseno" aria-label="Cerrar" onClick={() => setAbierto(false)} className="flex h-7 w-7 items-center justify-center rounded-md bg-gris-boton text-teal"><X size={14} aria-hidden="true" /></button>
+          </div>
+          <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-tenue">Acomodo</h3>
+          <div className="grid grid-cols-3 gap-2">
+            {ACOMODOS.map((d) => (
+              <button key={d.tipo} data-testid={`diseno-${d.tipo}`} onClick={() => onElegir({ tipo: d.tipo })}
+                className={`flex flex-col gap-1.5 rounded-xl border p-1.5 text-left text-[11px] font-semibold leading-tight ${diseno.tipo === d.tipo ? 'border-teal bg-teal-claro' : 'border-borde'}`}>
                 <Miniatura tipo={d.tipo} />{d.nombre}
               </button>
             ))}
           </div>
+          <h3 className={titulo}>Forma de la viñeta</h3>
+          <div className="flex gap-2">
+            {FORMAS.map((f) => (
+              <button key={f.forma} data-testid={`forma-${f.forma}`} onClick={() => onElegir({ forma: f.forma })} className={`flex flex-1 flex-col items-center justify-center gap-1 ${opcion(diseno.forma === f.forma)}`}>
+                <span className={`inline-block h-3.5 w-3.5 border-2 border-current ${f.clase}`} aria-hidden="true" />{f.nombre}
+              </button>
+            ))}
+          </div>
+          <h3 className={titulo}>Imagen</h3>
+          <div className="flex gap-2">
+            {AJUSTES.map((a) => <button key={a.ajuste} data-testid={`ajuste-${a.ajuste}`} onClick={() => onElegir({ ajuste: a.ajuste })} className={`flex-1 ${opcion(diseno.ajuste === a.ajuste)}`}>{a.nombre}</button>)}
+          </div>
+          <h3 className={titulo}>Fondo</h3>
+          <div className="flex gap-2">
+            {FONDOS.map((f) => (
+              <button key={f.fondo} data-testid={`fondo-${f.fondo}`} onClick={() => onElegir({ fondo: f.fondo })} className={`flex flex-1 flex-col items-center justify-center gap-1 ${opcion(diseno.fondo === f.fondo)}`}>
+                <span className="inline-block h-3.5 w-3.5 rounded-full border border-borde-fuerte" style={{ background: f.color }} aria-hidden="true" />{f.nombre}
+              </button>
+            ))}
+          </div>
           <label className={`mt-3 flex flex-col gap-1 text-[12px] font-semibold ${usaFijado ? '' : 'opacity-50'}`}>Quién va grande
-            <select data-testid="fijar" disabled={!usaFijado} value={diseno.fijado ?? ''} onChange={(e) => onElegir(diseno.tipo, e.target.value || null)} className="h-9 rounded-lg border border-borde-fuerte bg-white px-2 text-[13px] font-normal">
+            <select data-testid="fijar" disabled={!usaFijado} value={diseno.fijado ?? ''} onChange={(e) => onElegir({ fijado: e.target.value || null })} className="h-9 rounded-lg border border-borde-fuerte bg-white px-2 text-[13px] font-normal">
               <option value="">El primero del escenario</option>
               {personas.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
             </select>
           </label>
-          {!usaFijado && <p className="mt-1 text-[11px] text-tenue">Solo aplica en «Foco» y «Viñetas redondas».</p>}
+          {!usaFijado && <p className="mt-1 text-[11px] text-tenue">Solo aplica en los acomodos con foco.</p>}
         </div>
       )}
     </div>
@@ -237,6 +294,7 @@ export default function Consola() {
       id: p.id,
       nodo: (
         <Mosaico nombre={p.nombre} pista={camaraDe(salaSesion, p.id)} className="h-full w-full">
+          {!p.conectado && <SinConexion />}
           <ClicParaMover data-testid={`bajar-${p.nombre}`} texto="Clic para bajar a backstage" onClick={() => ejecutar('bajar', p.id)} />
           <BotonMicrofono p={p} sid={sid} onError={setAviso} />
         </Mosaico>
@@ -273,7 +331,7 @@ export default function Consola() {
               <BotonControl data-testid="boton-mic" activo={micOn} encendido={{ icono: <Mic size={22} aria-hidden="true" />, texto: 'Silenciar mi micrófono' }} apagado={{ icono: <MicOff size={22} aria-hidden="true" />, texto: 'Activar mi micrófono' }} onClick={() => setMicOn(!micOn)} />
               <BotonControl data-testid="boton-cam" activo={camOn} encendido={{ icono: <IconoVideo size={22} aria-hidden="true" />, texto: 'Apagar mi cámara' }} apagado={{ icono: <VideoOff size={22} aria-hidden="true" />, texto: 'Encender mi cámara' }} onClick={() => setCamOn(!camOn)} />
               <SelectorDiseno diseno={estado.diseno} personas={enEscena.map((v) => ({ id: v.id, nombre: estado.equipo.find((m) => m.id === v.id)?.nombre ?? participantes.find((p) => p.id === v.id)?.nombre ?? '' }))}
-                onElegir={(tipo, fijado) => void api.diseno(sid, tipo, fijado).catch(() => setAviso('No se pudo cambiar el diseño'))} />
+                onElegir={(parche) => void api.diseno(sid, { ...estado.diseno, ...parche }).catch(() => setAviso('No se pudo cambiar el diseño'))} />
               <Boton data-testid="mi-escenario" onClick={alternarEscenario}>
                 <span className="inline-flex items-center gap-1.5"><ArrowRightLeft size={14} aria-hidden="true" />{enEscenario ? 'Ir a backstage' : 'Subirme al escenario'}</span>
               </Boton>
@@ -315,7 +373,7 @@ export default function Consola() {
                   <Mosaico nombre={p.nombre} pista={camaraDe(salaSesion, p.id)} className="aspect-video rounded-xl">
                     <ClicParaMover data-testid={`subir-${p.nombre}`} texto="Clic para subir al escenario" onClick={() => ejecutar('subir', p.id)} />
                     <BotonMicrofono p={p} sid={sid} onError={setAviso} />
-                    {!p.conectado && <span className="absolute right-2 top-2 z-[2] rounded-md bg-peligro-fondo px-1.5 py-0.5 text-[10px] font-semibold text-peligro"><MicOff size={10} className="mr-1 inline" />Sin conexión</span>}
+                    {!p.conectado && <SinConexion />}
                   </Mosaico>
                   <div className="flex gap-1.5">
                     <Boton data-testid={`verde-${p.nombre}`} className="flex-1" onClick={() => ejecutar('llamar', p.id)} title="Regresar a la sala verde">Sala verde</Boton>

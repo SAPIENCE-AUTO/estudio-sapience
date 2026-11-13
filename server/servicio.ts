@@ -2,7 +2,7 @@
 // Todo lo que cambia una sesión pasa por UNA fila (una acción a la vez por sesión): así las ráfagas de clics no se pisan.
 // Cada acción trabaja sobre una copia y solo se confirma si LiveKit también respondió bien: nunca queda a medias.
 import { salaSesion } from '../compartido/tipos';
-import type { RespuestaAccion, RespuestaEntrar, RespuestaTokenEquipo, TipoDiseno } from '../compartido/tipos';
+import type { RespuestaAccion, RespuestaEntrar, RespuestaTokenEquipo, Diseno } from '../compartido/tipos';
 import * as d from './dominio';
 import { guardarPronto, cargar } from './almacen';
 import { difundir } from './difusion';
@@ -84,7 +84,13 @@ type Cambio = { cambio: boolean; de: import('../compartido/tipos').Lugar };
 
 /** Nadie cambia de sala: solo se enciende o se apaga lo que la persona puede publicar y recibir (el lobby no publica ni recibe). */
 async function permisosPorLugar(s: d.Sesion, pid: string, destino: 'lobby' | 'activo'): Promise<void> {
-  await lk.permisos(salaSesion(s.id), pid, destino === 'lobby' ? { publicar: false, recibir: false } : { publicar: true, recibir: true, microfono: !s.participantes[pid]?.silenciado });
+  try {
+    await lk.permisos(salaSesion(s.id), pid, destino === 'lobby' ? { publicar: false, recibir: false } : { publicar: true, recibir: true, microfono: !s.participantes[pid]?.silenciado });
+  } catch (e) {
+    // Si la persona se desconectó, LiveKit ya no la encuentra: el cambio de lugar SÍ vale (si no, no se podría mover a nadie desconectado).
+    // Cuando vuelva a entrar, su pase nuevo ya trae los permisos del lugar donde quedó.
+    if (!(e instanceof lk.PersonaDesconectada)) throw e;
+  }
 }
 
 const respuesta = (s: d.Sesion): RespuestaAccion => ({ v: s.version });
@@ -113,8 +119,8 @@ export function regresarALobby(sid: string, pid: string): Promise<RespuestaAccio
 }
 
 /** El equipo elige el diseño del escenario. No toca LiveKit: solo cambia cómo se dibuja (en pantalla, y más adelante en la grabación). */
-export function ponerDiseno(sid: string, tipo: TipoDiseno, fijado: string | null): Promise<RespuestaAccion> {
-  return transaccion(sid, async (s) => { d.ponerDiseno(s, tipo, fijado); return respuesta(s); });
+export function ponerDiseno(sid: string, diseno: Diseno): Promise<RespuestaAccion> {
+  return transaccion(sid, async (s) => { d.ponerDiseno(s, diseno); return respuesta(s); });
 }
 
 /** El equipo quita o permite el micrófono de un participante. Si no está conectado, queda guardado y vale al volver a entrar. */

@@ -39,21 +39,24 @@ describe('acomodo del escenario', () => {
 
 describe('orden según el diseño', () => {
   const gente = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
-  it('en foco y viñetas redondas la persona fijada va primero y las demás conservan su orden', () => {
-    expect(ordenar(gente, { tipo: 'foco', fijado: 'c' }).map((p) => p.id)).toEqual(['c', 'a', 'b']);
-    expect(ordenar(gente, { tipo: 'redondas', fijado: 'b' }).map((p) => p.id)).toEqual(['b', 'a', 'c']);
+  const base = { forma: 'redondeada', ajuste: 'llenar', fondo: 'gris' } as const;
+  it('en foco, tira abajo y viñetas flotantes la persona fijada va primero y las demás conservan su orden', () => {
+    expect(ordenar(gente, { ...base, tipo: 'foco', fijado: 'c' }).map((p) => p.id)).toEqual(['c', 'a', 'b']);
+    expect(ordenar(gente, { ...base, tipo: 'redondas', fijado: 'b' }).map((p) => p.id)).toEqual(['b', 'a', 'c']);
+    expect(ordenar(gente, { ...base, tipo: 'tira-abajo', fijado: 'c' }).map((p) => p.id)).toEqual(['c', 'a', 'b']);
   });
   it('si la fijada no está en el escenario, o no hay fijada, se queda el orden de siempre', () => {
-    expect(ordenar(gente, { tipo: 'foco', fijado: 'z' }).map((p) => p.id)).toEqual(['a', 'b', 'c']);
-    expect(ordenar(gente, { tipo: 'foco', fijado: null }).map((p) => p.id)).toEqual(['a', 'b', 'c']);
+    expect(ordenar(gente, { ...base, tipo: 'foco', fijado: 'z' }).map((p) => p.id)).toEqual(['a', 'b', 'c']);
+    expect(ordenar(gente, { ...base, tipo: 'foco', fijado: null }).map((p) => p.id)).toEqual(['a', 'b', 'c']);
   });
-  it('en automático y lado a lado no se mueve a nadie aunque haya una fijada', () => {
-    expect(ordenar(gente, { tipo: 'auto', fijado: 'c' }).map((p) => p.id)).toEqual(['a', 'b', 'c']);
-    expect(ordenar(gente, { tipo: 'lado', fijado: 'c' }).map((p) => p.id)).toEqual(['a', 'b', 'c']);
+  it('en automático, lado a lado y fila no se mueve a nadie aunque haya una fijada', () => {
+    expect(ordenar(gente, { ...base, tipo: 'fila', fijado: 'c' }).map((p) => p.id)).toEqual(['a', 'b', 'c']);
+    expect(ordenar(gente, { ...base, tipo: 'auto', fijado: 'c' }).map((p) => p.id)).toEqual(['a', 'b', 'c']);
+    expect(ordenar(gente, { ...base, tipo: 'lado', fijado: 'c' }).map((p) => p.id)).toEqual(['a', 'b', 'c']);
   });
   it('no modifica la lista original', () => {
     const copia = [...gente];
-    ordenar(gente, { tipo: 'foco', fijado: 'c' });
+    ordenar(gente, { ...base, tipo: 'foco', fijado: 'c' });
     expect(gente).toEqual(copia);
   });
 });

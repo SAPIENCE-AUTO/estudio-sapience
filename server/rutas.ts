@@ -5,6 +5,7 @@ import { ErrorDominio, idMiembro } from './dominio';
 import { PersonaDesconectada } from './livekit';
 import { equipoDesdeSolicitud, ErrorAcceso, esLlaveDelHub, firmarBoleto, pasePorEncabezado, type DatosPase, type UsuarioEquipo } from './auth';
 import * as servicio from './servicio';
+import { AJUSTES_DISENO, FONDOS_DISENO, FORMAS_DISENO, TIPOS_DISENO } from '../compartido/tipos';
 
 type ConEquipo = Request & { equipo?: UsuarioEquipo };
 type ConPase = Request & { pase?: DatosPase };
@@ -102,8 +103,10 @@ export function crearRutas(): express.Router {
   }));
 
   r.post('/sesiones/:sid/diseno', exigirEquipo, ruta(async (req, res) => {
-    const { tipo, fijado } = z.object({ tipo: z.enum(['auto', 'foco', 'lado', 'redondas']), fijado: z.string().nullable() }).parse(req.body);
-    res.json(await servicio.ponerDiseno(req.params.sid as string, tipo, fijado));
+    const diseno = z.object({
+      tipo: z.enum(TIPOS_DISENO), fijado: z.string().nullable(), forma: z.enum(FORMAS_DISENO), ajuste: z.enum(AJUSTES_DISENO), fondo: z.enum(FONDOS_DISENO),
+    }).parse(req.body);
+    res.json(await servicio.ponerDiseno(req.params.sid as string, diseno));
   }));
 
   r.post('/sesiones/:sid/terminar', exigirEquipo, ruta(async (req, res) => {

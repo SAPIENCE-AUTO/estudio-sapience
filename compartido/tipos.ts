@@ -1,13 +1,28 @@
 // Tipos que comparten el servidor y la interfaz. Lo que viaja por la red está aquí, en un solo lugar.
 
 /** Cómo se acomoda la gente en el escenario. Lo decide el equipo y lo ven todos igual (también lo que se grabe o se transmita). */
-export type TipoDiseno = 'auto' | 'foco' | 'lado' | 'redondas';
+export const TIPOS_DISENO = ['auto', 'foco', 'tira-abajo', 'lado', 'fila', 'redondas'] as const;
+export const FORMAS_DISENO = ['cuadrada', 'redondeada', 'circulo'] as const;
+export const AJUSTES_DISENO = ['llenar', 'completo'] as const;
+export const FONDOS_DISENO = ['gris', 'blanco', 'negro', 'marca'] as const;
+/** Acomodo: dónde va cada quien. */
+export type TipoDiseno = (typeof TIPOS_DISENO)[number];
+/** Forma de la viñeta (el círculo incluye al moderador). */
+export type FormaDiseno = (typeof FORMAS_DISENO)[number];
+/** «Llenar» recorta los bordes del video; «completo» lo muestra entero y deja espacio. */
+export type AjusteDiseno = (typeof AJUSTES_DISENO)[number];
+export type FondoDiseno = (typeof FONDOS_DISENO)[number];
 export interface Diseno {
   tipo: TipoDiseno;
-  /** Quién va grande en «foco» y «redondas» (si no está en el escenario, va el primero). */
+  /** Quién va grande en «foco», «tira-abajo» y «redondas» (si no está en el escenario, va el primero). */
   fijado: string | null;
+  forma: FormaDiseno;
+  ajuste: AjusteDiseno;
+  fondo: FondoDiseno;
 }
-export const DISENO_INICIAL: Diseno = { tipo: 'auto', fijado: null };
+export const DISENO_INICIAL: Diseno = { tipo: 'auto', fijado: null, forma: 'redondeada', ajuste: 'llenar', fondo: 'gris' };
+/** Completa lo que falte (sesiones guardadas antes de que existieran la forma, el ajuste y el fondo). */
+export const normalizarDiseno = (d?: Partial<Diseno> | null): Diseno => ({ ...DISENO_INICIAL, ...(d ?? {}) });
 
 /** Dónde está una persona. El orden de las salas es: lobby → sala verde → sesión (backstage o escenario). */
 export type Lugar = 'lobby' | 'verde' | 'backstage' | 'escenario';

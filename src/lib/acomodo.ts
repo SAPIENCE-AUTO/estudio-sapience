@@ -1,4 +1,4 @@
-import type { Diseno } from '../../compartido/tipos';
+import type { Diseno, TipoDiseno } from '../../compartido/tipos';
 
 // Cómo se acomoda la gente dentro del escenario. El lienzo siempre es 16:9; lo que cambia es lo de adentro:
 // 1 persona ocupa todo, 2 van lado a lado, de 3 en adelante forman una cuadrícula y la última fila se centra.
@@ -24,12 +24,15 @@ export function acomodo(n: number): number[] {
   return Array.from({ length: filas }, (_, i) => base + (i < sobran ? 1 : 0));
 }
 
+/** Los acomodos donde una persona va grande y las demás van aparte. */
+export const tieneFoco = (tipo: TipoDiseno) => tipo === 'foco' || tipo === 'tira-abajo' || tipo === 'redondas';
+
 /**
  * Orden de las personas según el diseño. En «foco» y «redondas» la primera va grande: la que el equipo fijó
  * si está en el escenario, y si no, la primera de la lista. En los demás diseños el orden no cambia.
  */
 export function ordenar<T extends { id: string }>(personas: T[], diseno: Diseno): T[] {
-  if (diseno.tipo !== 'foco' && diseno.tipo !== 'redondas') return personas;
+  if (!tieneFoco(diseno.tipo)) return personas;
   const i = personas.findIndex((p) => p.id === diseno.fijado);
   if (i <= 0) return personas;
   return [personas[i]!, ...personas.slice(0, i), ...personas.slice(i + 1)];

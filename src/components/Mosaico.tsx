@@ -1,4 +1,6 @@
+import { createContext, useContext } from 'react';
 import type { LocalTrack, RemoteTrack } from 'livekit-client';
+import type { AjusteDiseno } from '../../compartido/tipos';
 import { Video } from './Video';
 
 /** Silueta plana de los dibujos aprobados: se ve mientras llega el primer cuadro de video (nunca una pantalla negra). */
@@ -11,6 +13,9 @@ function Silueta() {
   );
 }
 
+/** El lienzo del escenario dice cómo se ajusta la imagen en sus viñetas: llenarla (recorta) o mostrarla completa. */
+export const AjusteContext = createContext<AjusteDiseno>('llenar');
+
 export function Mosaico({ nombre, pista, flujo, espejo, esYo, etiqueta, children, className }: {
   nombre: string;
   pista?: RemoteTrack | LocalTrack | null;
@@ -22,13 +27,14 @@ export function Mosaico({ nombre, pista, flujo, espejo, esYo, etiqueta, children
   children?: React.ReactNode;
   className?: string;
 }) {
+  const completo = useContext(AjusteContext) === 'completo';
   const hayVideo = !!pista || !!flujo;
   // Si quien lo usa lo posiciona (absolute, fixed...), no se le impone «relative».
   const posicion = /\b(absolute|fixed|sticky)\b/.test(className ?? '') ? '' : 'relative';
   return (
-    <div className={`${posicion} overflow-hidden bg-video ${className ?? ''}`} data-testid={`mosaico-${nombre}`}>
+    <div className={`${posicion} overflow-hidden ${completo ? 'bg-transparent' : 'bg-video'} ${className ?? ''}`} data-testid={`mosaico-${nombre}`}>
       <Silueta />
-      {hayVideo && <Video pista={pista} flujo={flujo} espejo={espejo} className="fundido absolute inset-0 h-full w-full object-cover" />}
+      {hayVideo && <Video pista={pista} flujo={flujo} espejo={espejo} className={`fundido absolute inset-0 h-full w-full ${completo ? 'object-contain' : 'object-cover'}`} />}
       <span className={`absolute bottom-2 left-2 rounded-md px-2 py-0.5 text-[11px] font-semibold ${esYo ? 'bg-oro text-oro-texto' : 'bg-white text-texto'}`}>
         {esYo ? 'Tú' : nombre}{etiqueta ? ` – ${etiqueta}` : ''}
       </span>
