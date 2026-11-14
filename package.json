@@ -13,7 +13,9 @@
     "test": "vitest run",
     "e2e": "tsx pruebas/e2e.ts",
     "ensayo-login": "tsx pruebas/ensayo-login.ts",
-    "db:probar": "tsx pruebas/probar-base.ts"
+    "db:probar": "tsx pruebas/probar-base.ts",
+    "sesion:prueba": "tsx --env-file=.env.prueba pruebas/crear-sesion-de-prueba.ts",
+    "transmisiones": "tsx --env-file=.env pruebas/ver-transmisiones.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.0",

@@ -17,7 +17,7 @@ services:
       - key: AUTH_MODE
         value: supabase
       - key: URL_PUBLICA
-        value: https://talks.mx
+        value: https://www.talks.mx
       # Firma los pases de los participantes: Render la genera una vez y la conserva.
       - key: APP_SECRET
         generateValue: true

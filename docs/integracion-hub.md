@@ -17,7 +17,7 @@ En cada **evento del calendario** del Hub, un botón que inicia la sesión en Ta
 
 ## Seguridad
 
-- El Hub llama a Talks con la llave compartida: `Authorization: Bearer <HUB_API_KEY>`. Es la misma que está en Render (servicio `talks`, variable `HUB_API_KEY`). En el Hub va en dos variables nuevas: `TALKS_URL` (por ahora `https://talks-y08o.onrender.com`, luego `https://talks.mx`) y `TALKS_API_KEY`.
+- El Hub llama a Talks con la llave compartida: `Authorization: Bearer <HUB_API_KEY>`. Es la misma que está en Render (servicio `talks`, variable `HUB_API_KEY`). En el Hub va en dos variables nuevas: `TALKS_URL` (`https://www.talks.mx`: con el `www`, porque las llamadas entre sistemas NO pueden pasar por la redirección de `talks.mx` a `www.talks.mx`: pierde la llave y cambia el POST por un GET) y `TALKS_API_KEY`.
 - **La llave de Mux (`mux_stream_key`) es la única credencial que permite transmitir a esa sala.** Talks la guarda solo en el servidor (base de datos, con seguridad por filas) y **nunca** la devuelve: ni en las respuestas, ni en el estado que ven las pantallas, ni en los registros. El Hub tampoco debe ponerla en URLs ni en registros.
 - El botón de «Crear links» debe pedir sesión iniciada en el Hub (igual que `createObservationStream`).
 
