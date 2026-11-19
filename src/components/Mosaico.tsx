@@ -17,7 +17,7 @@ function Silueta() {
 /** El lienzo del escenario dice cómo se ajusta la imagen en sus viñetas: llenarla (recorta) o mostrarla completa. */
 export const AjusteContext = createContext<AjusteDiseno>('llenar');
 
-export function Mosaico({ nombre, pista, flujo, espejo, esYo, etiqueta, propia, children, className }: {
+export function Mosaico({ nombre, pista, flujo, espejo, esYo, etiqueta, propia, testid, children, className }: {
   nombre: string;
   pista?: RemoteTrack | LocalTrack | null;
   flujo?: MediaStream | null;
@@ -27,6 +27,8 @@ export function Mosaico({ nombre, pista, flujo, espejo, esYo, etiqueta, propia, 
   etiqueta?: string;
   /** Recuadro que toma la forma del video de la persona (vertical si manda su celular en vertical), sin pasar de estos límites. Solo para vistas propias. */
   propia?: LimitesPropios;
+  /** Para cuando la misma persona sale en dos recuadros a la vez y no deben compartir identificador (por defecto: `mosaico-<nombre>`). */
+  testid?: string;
   children?: React.ReactNode;
   className?: string;
 }) {
@@ -53,7 +55,7 @@ export function Mosaico({ nombre, pista, flujo, espejo, esYo, etiqueta, propia, 
   // Si quien lo usa lo posiciona (absolute, fixed...), no se le impone «relative».
   const posicion = /\b(absolute|fixed|sticky)\b/.test(className ?? '') ? '' : 'relative';
   return (
-    <div ref={raiz} className={`${posicion} overflow-hidden ${completo ? 'bg-transparent' : 'bg-video'} ${className ?? ''}`} data-testid={`mosaico-${nombre}`}
+    <div ref={raiz} className={`${posicion} overflow-hidden ${completo ? 'bg-transparent' : 'bg-video'} ${className ?? ''}`} data-testid={testid ?? `mosaico-${nombre}`}
       style={propia && video ? medidasPropias(video, propia) : undefined}
       data-ajuste-imagen={hayVideo ? ajuste : undefined} data-video={video ? `${video.w}x${video.h}` : undefined}
       title={video ? `Cámara: ${video.w}×${video.h}` : undefined}>

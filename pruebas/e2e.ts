@@ -180,6 +180,45 @@ async function main() {
       ]);
       anotar(`${n}: sala verde con video en las dos pantallas`, true, JSON.stringify(marcas));
       if (n === NOMBRES[0]) { await dormir(700); await foto(consola, '3-consola-llamando-a-la-sala-verde'); await foto(paginas[n], '4-participante-en-la-sala-verde'); }
+      // Controles propios dentro de la sala verde: quien modera se ve, y ahí mismo enciende o apaga su micrófono y su cámara (con texto, no solo íconos)
+      if (n === NOMBRES[0]) {
+        const texto = (testid: string) => consola.evaluate((id: string) => (document.querySelector(`[data-testid="${id}"]`) as HTMLElement | null)?.innerText.replace(/\s+/g, ' ').trim() ?? null, testid);
+        const hay = (testid: string) => consola.evaluate((id: string) => !!document.querySelector(`[data-testid="${id}"]`), testid);
+        const micsDeOtros = (pag: Page) => pag.evaluate(`JSON.stringify((() => { const sala = window.__sala; const r = []; if (!sala) return r; for (const p of sala.remoteParticipants.values()) { const pub = p.getTrackPublication('microphone'); if (pub) r.push(pub.isMuted); } return r; })())`).then((t) => JSON.parse(String(t)) as boolean[]);
+        await esperar(consola, JS.hay(`[data-testid="vista-propia-${n}"]`));
+        anotar(`${n} en sala verde: la moderadora se ve a sí misma sobre su imagen`, await hay(`vista-propia-${n}`));
+        // Solo íconos, sin texto (ocupa espacio), y en horizontal; el nombre de la acción va en el título y en el nombre accesible, y cambia con el estado
+        const etiqueta = (testid: string) => consola.evaluate((id: string) => document.querySelector(`[data-testid="${id}"]`)?.getAttribute('aria-label') ?? null, testid);
+        const cajaDe = (testid: string) => consola.evaluate((id: string) => { const r = document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect(); return r ? { x: r.left, y: r.top, w: r.width, h: r.height } : null; }, testid);
+        const cMic = await cajaDe(`verde-mic-${n}`); const cCam = await cajaDe(`verde-cam-${n}`);
+        anotar('Los controles de la sala verde son solo íconos, sin texto', (await texto(`verde-mic-${n}`)) === '' && (await texto(`verde-cam-${n}`)) === '' && (await texto('boton-mic')) === '' && (await texto('boton-cam')) === '', `${await texto(`verde-mic-${n}`)}|${await texto('boton-mic')}`);
+        anotar('El micrófono y la cámara de la sala verde van en horizontal, uno al lado del otro', !!cMic && !!cCam && Math.abs(cMic.y - cCam.y) < 4 && cCam.x > cMic.x + cMic.w - 1 && cMic.h <= 44, JSON.stringify({ cMic, cCam }));
+        anotar('Su nombre accesible dice qué hacen', (await etiqueta(`verde-mic-${n}`)) === 'Silenciar mi micrófono' && (await etiqueta(`verde-cam-${n}`)) === 'Apagar mi cámara' && (await etiqueta('boton-mic')) === 'Silenciar mi micrófono' && (await etiqueta('boton-cam')) === 'Apagar mi cámara');
+        anotar('Con el micrófono y la cámara encendidos no hay avisos', !(await hay(`aviso-mic-apagado-${n}`)) && !(await hay(`aviso-cam-apagada-${n}`)));
+        anotar(`${n} sí recibe el audio de la moderadora`, (await micsDeOtros(paginas[n])).some((m) => m === false), JSON.stringify(await micsDeOtros(paginas[n])));
+        await foto(consola, '3b-sala-verde-con-mis-controles');
+
+        await clic(consola, `verde-mic-${n}`);
+        await esperar(consola, JS.hay(`[data-testid="aviso-mic-apagado-${n}"]`));
+        anotar('Apagar el micrófono desde la sala verde avisa «no te oye» con el nombre de la persona', (await texto(`aviso-mic-apagado-${n}`)) === `Tu micrófono está apagado: ${n} no te oye`, String(await texto(`aviso-mic-apagado-${n}`)));
+        anotar('El botón de abajo del escenario se apaga también (es el mismo control)', (await etiqueta('boton-mic')) === 'Activar mi micrófono' && (await etiqueta(`verde-mic-${n}`)) === 'Activar mi micrófono', String(await etiqueta('boton-mic')));
+        await esperar(paginas[n], `(() => { const m = window.__sala && [...window.__sala.remoteParticipants.values()].map((p) => p.getTrackPublication('microphone')).filter(Boolean); return !!m && m.length > 0 && m.every((x) => x.isMuted); })()`, null, 8000);
+        anotar(`${n} deja de recibir el audio de verdad (no es solo un aviso en pantalla)`, (await micsDeOtros(paginas[n])).every((m) => m === true), JSON.stringify(await micsDeOtros(paginas[n])));
+        await foto(consola, '3c-sala-verde-microfono-apagado');
+        await clic(consola, 'boton-mic'); // se vuelve a encender desde el botón de abajo: los dos son el mismo control
+        await esperar(consola, JS.noHay(`[data-testid="aviso-mic-apagado-${n}"]`));
+        anotar('Encenderlo desde abajo del escenario quita el aviso de la sala verde', !(await hay(`aviso-mic-apagado-${n}`)) && (await etiqueta(`verde-mic-${n}`)) === 'Silenciar mi micrófono');
+
+        await clic(consola, `verde-cam-${n}`);
+        await esperar(consola, JS.hay(`[data-testid="aviso-cam-apagada-${n}"]`));
+        anotar('Apagar la cámara avisa «no te ve»', (await texto(`aviso-cam-apagada-${n}`)) === `Tu cámara está apagada: ${n} no te ve` && (await etiqueta('boton-cam')) === 'Encender mi cámara', String(await texto(`aviso-cam-apagada-${n}`)));
+        await clic(consola, `verde-cam-${n}`);
+        await esperar(consola, JS.noHay(`[data-testid="aviso-cam-apagada-${n}"]`));
+        anotar('Volver a encender la cámara quita el aviso', !(await hay(`aviso-cam-apagada-${n}`)));
+        await esperar(consola, JS.videoSonando(n));
+        await esperar(paginas[n], JS.videoSonando('Marina'));
+        anotar('Tras apagar y encender, la moderadora sigue viéndose y la persona la sigue viendo', true);
+      }
       t0 = ahora();
       await clic(consola, `pasar-${n}`);
       await esperar(paginas[n], JS.lugar('backstage'));

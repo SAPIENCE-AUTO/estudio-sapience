@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Room, Track, type RemoteAudioTrack } from 'livekit-client';
+import { Room, Track, type LocalTrack, type RemoteAudioTrack } from 'livekit-client';
 import { ArrowRightLeft, BellRing, Radio, Star, Copy, DoorOpen, EyeOff, LayoutGrid, Mic, MicOff, Video as IconoVideo, VideoOff, WifiOff, X } from 'lucide-react';
 import type { AjusteDiseno, Diseno, EstadoEquipo, FondoDiseno, FormaDiseno, ParticipantePublico, TipoDiseno } from '../../compartido/tipos';
 import { tieneFoco } from '../lib/acomodo';
@@ -64,15 +64,19 @@ function Indicador({ tono, icono: Icono, children, ...resto }: { tono: 'atencion
   return <span {...resto} className={`inline-flex items-center gap-1 whitespace-nowrap rounded-lg px-2 py-0.5 text-[11px] font-semibold ${estilos}`}><Icono size={12} aria-hidden="true" />{children}</span>;
 }
 
-/** Mic y cámara: círculo azul oscuro encendido, rojo sólido apagado. El ícono cambia (tachado), así que no depende solo del color. */
-function BotonControl({ activo, encendido, apagado, onClick, ...resto }: {
-  activo: boolean; encendido: { icono: React.ReactNode; texto: string }; apagado: { icono: React.ReactNode; texto: string }; onClick: () => void; 'data-testid'?: string;
+/**
+ * Mic y cámara: círculo azul oscuro encendido, rojo sólido apagado. Solo ícono, sin texto (Sergio: el texto ocupa espacio): el ícono cambia
+ * (tachado) así que no depende solo del color, y el nombre de la acción queda en `title` y `aria-label`.
+ * `compacto` es el tamaño chico, para la tarjeta de la sala verde.
+ */
+function BotonControl({ activo, encendido, apagado, onClick, compacto, ...resto }: {
+  activo: boolean; encendido: { icono: React.ReactNode; texto: string }; apagado: { icono: React.ReactNode; texto: string }; onClick: () => void;
+  compacto?: boolean; 'data-testid'?: string;
 }) {
   const e = activo ? encendido : apagado;
   return (
-    <button {...resto} aria-pressed={!activo} title={e.texto} onClick={onClick}
-      aria-label={e.texto}
-      className={`flex h-12 w-12 items-center justify-center rounded-full text-white ${activo ? 'bg-teal hover:bg-[#0b3140]' : 'bg-peligro hover:bg-[#9f1818]'}`}>{e.icono}</button>
+    <button {...resto} aria-pressed={!activo} title={e.texto} aria-label={e.texto} onClick={onClick}
+      className={`flex shrink-0 items-center justify-center rounded-full text-white ${compacto ? 'h-10 w-10' : 'h-12 w-12'} ${activo ? 'bg-teal hover:bg-[#0b3140]' : 'bg-peligro hover:bg-[#9f1818]'}`}>{e.icono}</button>
   );
 }
 
@@ -211,15 +215,43 @@ function SelectorDiseno({ diseno, personas, onElegir }: { diseno: Diseno; person
   );
 }
 
-function PanelVerde({ p, room, yo, ejecutar }: { p: ParticipantePublico; room: Room | undefined; yo: string; ejecutar: (a: Accion, pid: string) => void }) {
+/** Lo que la persona del equipo necesita para hablar con quien está en la sala verde: verse, y encender o apagar su micrófono y su cámara ahí mismo. */
+interface ControlesPropios { nombre: string; micOn: boolean; camOn: boolean; alternarMic: () => void; alternarCam: () => void; camara: LocalTrack | null }
+
+function PanelVerde({ p, room, yo, ejecutar, propio }: { p: ParticipantePublico; room: Room | undefined; yo: string; ejecutar: (a: Accion, pid: string) => void; propio: ControlesPropios }) {
   useCambiosDeSala(room ?? null);
+  const conmigo = p.verdeCon === yo; // los controles propios solo cuando soy yo quien habla con esta persona
   return (
     <div className="flex flex-col gap-2" data-testid={`panel-verde-${p.nombre}`}>
-      <Mosaico nombre={p.nombre} pista={room ? camaraDe(room, p.id) : null} className="aspect-video w-full rounded-xl">{!p.conectado && <><Velo /><SinConexion /></>}</Mosaico>
+      <div className="relative">
+        <Mosaico nombre={p.nombre} pista={room ? camaraDe(room, p.id) : null} className="aspect-video w-full rounded-xl">{!p.conectado && <><Velo /><SinConexion /></>}</Mosaico>
+        {/* Así te ve esta persona (como en el dibujo aprobado): tu imagen chica sobre la suya */}
+        {conmigo && <Mosaico nombre={propio.nombre} testid={`vista-propia-${p.nombre}`} esYo pista={propio.camara} espejo className="absolute bottom-2 right-2 aspect-video w-[30%] rounded-lg border-2 border-white" />}
+      </div>
       {sonidosDe(room ?? null).map((t) => <AudioRemoto key={t.sid} pista={t} />)}
+      {conmigo && (
+        <div className="flex flex-col gap-1.5" data-testid={`controles-verde-${p.nombre}`}>
+          {!propio.micOn && (
+            <p role="status" data-testid={`aviso-mic-apagado-${p.nombre}`} className="inline-flex items-center gap-1.5 rounded-lg bg-peligro-fondo px-2.5 py-1.5 text-[12px] font-semibold text-peligro">
+              <MicOff size={14} aria-hidden="true" className="shrink-0" />Tu micrófono está apagado: {p.nombre} no te oye
+            </p>
+          )}
+          {!propio.camOn && (
+            <p role="status" data-testid={`aviso-cam-apagada-${p.nombre}`} className="inline-flex items-center gap-1.5 rounded-lg bg-teal-claro px-2.5 py-1.5 text-[12px] font-semibold text-teal">
+              <VideoOff size={14} aria-hidden="true" className="shrink-0" />Tu cámara está apagada: {p.nombre} no te ve
+            </p>
+          )}
+          <div className="flex items-center gap-2" data-testid={`iconos-verde-${p.nombre}`}>
+            <BotonControl compacto data-testid={`verde-mic-${p.nombre}`} activo={propio.micOn} onClick={propio.alternarMic}
+              encendido={{ icono: <Mic size={20} aria-hidden="true" />, texto: 'Silenciar mi micrófono' }} apagado={{ icono: <MicOff size={20} aria-hidden="true" />, texto: 'Activar mi micrófono' }} />
+            <BotonControl compacto data-testid={`verde-cam-${p.nombre}`} activo={propio.camOn} onClick={propio.alternarCam}
+              encendido={{ icono: <IconoVideo size={20} aria-hidden="true" />, texto: 'Apagar mi cámara' }} apagado={{ icono: <VideoOff size={20} aria-hidden="true" />, texto: 'Encender mi cámara' }} />
+          </div>
+        </div>
+      )}
       <div className="flex gap-2">
         <Boton principal data-testid={`pasar-${p.nombre}`} className="flex-1" onClick={() => ejecutar('pasar', p.id)}>Pasar a la sesión</Boton>
-        <Boton data-testid={`lobby-${p.nombre}`} onClick={() => ejecutar('lobby', p.id)}>Regresar al lobby</Boton>
+        <Boton data-testid={`lobby-${p.nombre}`} title="Regresar al lobby" aria-label="Regresar al lobby" onClick={() => ejecutar('lobby', p.id)}>Al lobby</Boton>
       </div>
       {p.verdeCon !== yo && <p className="text-[12px] text-tenue">Lo tiene otra persona del equipo</p>}
     </div>
@@ -469,7 +501,7 @@ export default function Consola() {
               <Tarjeta titulo="Sala verde" cuenta={enVerde.length} aviso={enVerde.length > 0 ? <Indicador tono="sala" icono={DoorOpen}>Adentro</Indicador> : undefined}>
                 <div className="flex flex-col gap-4" data-testid="lista-verde">
                   {enVerde.length === 0 && <p className="text-[13px] text-tenue">Nadie en la sala verde</p>}
-                  {enVerde.map((p) => <PanelVerde key={p.id} p={p} room={salaSesion ?? undefined} yo={yo} ejecutar={ejecutar} />)}
+                  {enVerde.map((p) => <PanelVerde key={p.id} p={p} room={salaSesion ?? undefined} yo={yo} ejecutar={ejecutar} propio={{ nombre: miembro?.nombre ?? 'Tú', micOn, camOn, alternarMic: () => setMicOn(!micOn), alternarCam: () => setCamOn(!camOn), camara: miCamara }} />)}
                   {enVerde.some((p) => p.verdeCon !== yo) && <p className="text-[12px] text-tenue">{`Con ${nombreEquipo(enVerde.find((p) => p.verdeCon !== yo)?.verdeCon ?? null)}`}</p>}
                 </div>
               </Tarjeta>
