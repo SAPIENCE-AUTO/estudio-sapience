@@ -1,5 +1,6 @@
 // Cámara y micrófono del participante: lista de dispositivos, vista previa y medidor de micrófono.
 import { useEffect, useRef, useState } from 'react';
+import { esTactil, restriccionesDeVideo } from './imagen';
 
 export interface Dispositivos { camaras: MediaDeviceInfo[]; microfonos: MediaDeviceInfo[] }
 
@@ -34,7 +35,7 @@ export function useVistaPrevia(camaraId: string | undefined, activa: boolean): M
     let cancelado = false;
     let actual: MediaStream | null = null;
     navigator.mediaDevices
-      .getUserMedia({ video: camaraId ? { deviceId: { exact: camaraId }, width: { ideal: 640 }, height: { ideal: 360 } } : { width: { ideal: 640 }, height: { ideal: 360 } }, audio: false })
+      .getUserMedia({ video: restriccionesDeVideo(camaraId, esTactil()), audio: false })
       .then((f) => { if (cancelado) { f.getTracks().forEach((t) => t.stop()); return; } actual = f; setFlujo(f); })
       .catch(() => setFlujo(null));
     return () => { cancelado = true; actual?.getTracks().forEach((t) => t.stop()); };

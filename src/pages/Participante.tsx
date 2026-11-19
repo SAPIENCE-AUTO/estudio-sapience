@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { ConnectionState, Room, RoomEvent, Track, VideoPresets, type RemoteAudioTrack } from 'livekit-client';
+import { ConnectionState, Room, RoomEvent, Track, type RemoteAudioTrack } from 'livekit-client';
 import { Mic, MicOff, Video as IconoVideo, VideoOff } from 'lucide-react';
 import type { EstadoParticipante, Lugar, RespuestaEntrar } from '../../compartido/tipos';
 import { api, ErrorApi } from '../lib/api';
@@ -8,6 +8,7 @@ import { useCanal } from '../lib/canal';
 import { camaraDe, esperarPermisoDePublicar, permitidosDeParticipante, proteger, useCambiosDeSala } from '../lib/sala';
 import { listarDispositivos, pedirPermiso, useNivelMicrofono, useVistaPrevia, type Dispositivos, type PermisoMedios } from '../lib/medios';
 import { Mosaico } from '../components/Mosaico';
+import { esTactil, opcionesDeCamara, type LimitesPropios } from '../lib/imagen';
 import { AudioRemoto } from '../components/Video';
 import { Lienzo } from '../components/Lienzo';
 import { ChatParticipante } from '../components/Chat';
@@ -20,6 +21,11 @@ const clave = (codigo: string) => `estudio:${codigo}`;
 function leerGuardado(codigo: string): Guardado | null {
   try { return JSON.parse(sessionStorage.getItem(clave(codigo)) ?? 'null') as Guardado | null; } catch { return null; }
 }
+
+// Tamaños máximos del recuadro propio: toma la forma de la cámara (vertical en un celular vertical) sin pasar de aquí.
+const PROPIA_GRANDE: LimitesPropios = { anchoMax: '100%', altoMax: '42vh' }; // revisión de cámara y lobby
+const PROPIA_MEDIANA: LimitesPropios = { anchoMax: '8rem', altoMax: '9rem' }; // «Solo tú te ves aquí» en backstage
+const PROPIA_CHICA: LimitesPropios = { anchoMax: '7rem', altoMax: '9rem' }; // tu imagen sobre la del equipo en la sala verde
 
 function Marco({ children }: { children: React.ReactNode }) {
   return <div className="mx-auto flex min-h-full w-full max-w-md flex-col gap-4 px-5 py-6">{children}</div>;
@@ -156,7 +162,7 @@ function PruebaDeDispositivos({ nombre, camId, micId, setCamId, setMicId, entran
         </Tarjeta>
       ) : (
         <>
-          <Mosaico nombre={nombre} esYo flujo={flujo} espejo className="aspect-video w-full rounded-2xl" />
+          <Mosaico nombre={nombre} esYo flujo={flujo} espejo propia={PROPIA_GRANDE} className="mx-auto aspect-video w-full rounded-2xl" />
           <Tarjeta className="flex flex-col gap-3">
             <label className="flex flex-col gap-1 text-[13px] font-medium">Cámara
               <select value={camId} onChange={(e) => setCamId(e.target.value)} className="h-11 rounded-xl border border-borde-fuerte bg-white px-2 text-sm font-normal">
@@ -199,7 +205,7 @@ function Dentro({ entrada, camId, micId }: { entrada: RespuestaEntrar; camId?: s
     let cancelado = false;
     const r = new Room({
       adaptiveStream: false, dynacast: false,
-      videoCaptureDefaults: { deviceId: camId, resolution: VideoPresets.h360.resolution },
+      videoCaptureDefaults: opcionesDeCamara(camId, esTactil()), // en celular no se fuerza horizontal: así la imagen vertical no se recorta al tomarla
       audioCaptureDefaults: { deviceId: micId, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
     const conectar = async () => {
@@ -304,7 +310,7 @@ function Dentro({ entrada, camId, micId }: { entrada: RespuestaEntrar; camId?: s
             <h1 className="text-lg font-semibold">Estás en la sala de espera</h1>
             <p className="text-[13px] leading-5 text-tenue">El equipo te va a llamar en un momento.</p>
           </div>
-          <Mosaico nombre={yo.nombre} esYo flujo={vistaPrevia} espejo className="aspect-video w-full rounded-2xl" />
+          <Mosaico nombre={yo.nombre} esYo flujo={vistaPrevia} espejo propia={PROPIA_GRANDE} className="mx-auto aspect-video w-full rounded-2xl" />
           <div className="h-2 overflow-hidden rounded-full bg-gris-boton"><div className="h-full rounded-full bg-ok transition-[width] duration-75" style={{ width: `${Math.round(nivel * 100)}%` }} /></div>
         </div>
       )}
@@ -317,7 +323,7 @@ function Dentro({ entrada, camId, micId }: { entrada: RespuestaEntrar; camId?: s
           </div>
           <div className="relative">
             <Mosaico nombre={conQuien?.nombre ?? 'Equipo'} pista={camaraDe(room, yo.verdeCon ?? '')} className="aspect-video w-full rounded-2xl" />
-            <Mosaico nombre={yo.nombre} esYo pista={camaraLocal} flujo={camaraLocal ? null : vistaPrevia} espejo className="absolute bottom-3 right-3 aspect-video w-28 rounded-xl border-2 border-white" />
+            <Mosaico nombre={yo.nombre} esYo pista={camaraLocal} flujo={camaraLocal ? null : vistaPrevia} espejo propia={PROPIA_CHICA} className="absolute bottom-3 right-3 aspect-video w-28 rounded-xl border-2 border-white" />
           </div>
         </div>
       )}
@@ -340,7 +346,7 @@ function Dentro({ entrada, camId, micId }: { entrada: RespuestaEntrar; camId?: s
           </div>
           {yo.lugar === 'backstage' && (
             <div className="flex items-center gap-3 px-5">
-              <Mosaico nombre={yo.nombre} esYo pista={camaraLocal} flujo={camaraLocal ? null : vistaPrevia} espejo className="aspect-[4/3] w-32 rounded-xl opacity-60" />
+              <Mosaico nombre={yo.nombre} esYo pista={camaraLocal} flujo={camaraLocal ? null : vistaPrevia} espejo propia={PROPIA_MEDIANA} className="aspect-[4/3] w-32 rounded-xl opacity-60" />
               <span className="text-[13px] leading-5 text-tenue">Solo tú te ves aquí</span>
             </div>
           )}

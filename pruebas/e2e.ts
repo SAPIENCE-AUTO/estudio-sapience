@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import puppeteer, { type Page } from 'puppeteer-core';
+import { mediosFalsos } from './medios-falsos';
 
 const WEB = process.env.WEB ?? 'http://localhost:5173';
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -30,34 +31,7 @@ async function esperar(pagina: Page, fn: string, arg: unknown = null, ms = 15000
   return Math.round(ahora() - t0);
 }
 
-// En este entorno el Chrome sin ventana no logra abrir cámara ni micrófono (ni siquiera los de mentira que trae), así que
-// cada página recibe una cámara y un micrófono sintéticos (un cuadro en movimiento y un tono). Lo que se prueba es nuestro código y LiveKit;
-// la apertura de la cámara real la hace el navegador y se revisa a mano en celulares y computadoras de verdad.
-const MEDIOS_FALSOS = `(() => {
-  window.__TRAZA = true;
-  let contexto = null;
-  const crearFlujo = (video, audio) => {
-    const flujo = new MediaStream();
-    if (video) {
-      const c = document.createElement('canvas'); c.width = 640; c.height = 360;
-      const x = c.getContext('2d'); let n = 0;
-      setInterval(() => { x.fillStyle = '#2a6f5a'; x.fillRect(0, 0, 640, 360); x.fillStyle = '#ffffff'; x.fillRect((n * 8) % 600, 280, 40, 40); n++; }, 66);
-      c.captureStream(15).getVideoTracks().forEach((t) => flujo.addTrack(t));
-    }
-    if (audio) {
-      contexto = contexto || new AudioContext();
-      const osc = contexto.createOscillator(); const g = contexto.createGain(); g.gain.value = 0.02;
-      const d = contexto.createMediaStreamDestination(); osc.connect(g); g.connect(d); osc.start();
-      d.stream.getAudioTracks().forEach((t) => flujo.addTrack(t));
-    }
-    return flujo;
-  };
-  navigator.mediaDevices.getUserMedia = async (c) => crearFlujo(!!(c && c.video), !!(c && c.audio));
-  navigator.mediaDevices.enumerateDevices = async () => [
-    { deviceId: 'cam-de-prueba', kind: 'videoinput', label: 'Cámara de prueba', groupId: 'g1' },
-    { deviceId: 'mic-de-prueba', kind: 'audioinput', label: 'Micrófono de prueba', groupId: 'g1' },
-  ];
-})();`;
+const MEDIOS_FALSOS = mediosFalsos(640, 360); // cámara de laptop; ver medios-falsos.ts
 
 // A qué personas está REALMENTE suscrita una pantalla (video o audio recibido), no solo lo que dibuja.
 const suscritosDe = async (pag: Page): Promise<Record<string, string[]>> => JSON.parse(String(await pag.evaluate(`JSON.stringify((() => {
