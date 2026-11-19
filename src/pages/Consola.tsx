@@ -340,8 +340,10 @@ export default function Consola() {
   }, [salaSesion, salaSesionLista, enEscenario, equipoIds, enVerdeConmigo, yo, micOn, camOn]);
 
   // Fuera del escenario y sin hablar con nadie en la sala verde no se publica nada, pero la persona del equipo se sigue viendo (opaca) en backstage.
-  const publica = enEscenario || enVerdeConmigo !== '';
-  const vistaPrevia = useVistaPrevia(undefined, !publica && camOn);
+  // La cámara se mantiene ABIERTA mientras esté encendida (antes se cerraba al empezar a transmitir y LiveKit la arrancaba de cero: ese rato era
+  // el «segundo» de espera al subirse al escenario, con el recuadro vacío). Así el navegador reutiliza la captura y, mientras llega la pista
+  // publicada, el recuadro propio muestra esta vista previa en vez de la silueta. A los demás no les cambia nada: lo que se transmite sigue igual.
+  const vistaPrevia = useVistaPrevia(undefined, camOn, 'alta');
 
   if (!estado) return <div className="p-6 text-sm text-tenue">Conectando…</div>;
 
@@ -362,7 +364,7 @@ export default function Consola() {
     ...estado.equipo.filter((m) => m.enEscenario).map((m) => ({
       id: m.id,
       nodo: (
-        <Mosaico nombre={m.nombre} esYo={m.id === yo} pista={m.id === yo ? miCamara : camaraDe(salaSesion, m.id)} espejo={m.id === yo} className="h-full w-full">
+        <Mosaico nombre={m.nombre} esYo={m.id === yo} pista={m.id === yo ? miCamara : camaraDe(salaSesion, m.id)} flujo={m.id === yo && !miCamara ? vistaPrevia : null} espejo={m.id === yo} className="h-full w-full">
           {m.id === yo && <ClicParaMover data-testid="ir-backstage" texto="Clic para ir a backstage" onClick={alternarEscenario} />}
         </Mosaico>
       ),

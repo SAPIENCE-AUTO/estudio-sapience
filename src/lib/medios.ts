@@ -27,19 +27,19 @@ export async function pedirPermiso(): Promise<PermisoMedios> {
   }
 }
 
-/** Vista previa de la cámara elegida. Se apaga sola al salir o al cambiar de cámara. */
-export function useVistaPrevia(camaraId: string | undefined, activa: boolean): MediaStream | null {
+/** Vista previa de la cámara elegida. Se apaga sola al salir o al cambiar de cámara. `calidad: 'alta'` pide lo mismo que LiveKit al transmitir (ver `restriccionesDeVideo`). */
+export function useVistaPrevia(camaraId: string | undefined, activa: boolean, calidad: 'ligera' | 'alta' = 'ligera'): MediaStream | null {
   const [flujo, setFlujo] = useState<MediaStream | null>(null);
   useEffect(() => {
     if (!activa) { setFlujo(null); return; }
     let cancelado = false;
     let actual: MediaStream | null = null;
     navigator.mediaDevices
-      .getUserMedia({ video: restriccionesDeVideo(camaraId, esTactil()), audio: false })
+      .getUserMedia({ video: restriccionesDeVideo(camaraId, esTactil(), calidad), audio: false })
       .then((f) => { if (cancelado) { f.getTracks().forEach((t) => t.stop()); return; } actual = f; setFlujo(f); })
       .catch(() => setFlujo(null));
     return () => { cancelado = true; actual?.getTracks().forEach((t) => t.stop()); };
-  }, [camaraId, activa]);
+  }, [camaraId, activa, calidad]);
   return flujo;
 }
 

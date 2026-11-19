@@ -249,10 +249,27 @@ async function main() {
     const [a, b, c] = NOMBRES;
     const todas = { consola, ...paginas };
     {
+      // Cámara lenta (como una real en frío: 900 ms para arrancar). La consola ya la tiene abierta en la vista previa, así que su recuadro propio en el
+      // escenario muestra video de inmediato, mucho antes de que llegue la pista publicada; sin eso se vería la silueta vacía casi un segundo.
+      const miRecuadro = `(() => { const v = document.querySelector('[data-testid="lista-escenario"] [data-testid="mosaico-Marina"] video'); return !!v && v.videoWidth > 0 && v.readyState >= 2; })()`;
+      await consola.evaluate('window.__retardoCamara = 900');
+      await clic(consola, 'mi-escenario');
+      const conVideoRapido = await esperar(consola, miRecuadro, null, 450).then(() => true, () => false);
+      anotar('Con una cámara que tarda 900 ms en arrancar, al subirse el recuadro propio de la moderadora ya trae video antes de 450 ms (no la silueta vacía)', conVideoRapido);
+      await Promise.all(NOMBRES.map((n) => esperar(paginas[n], JS.videoSonando('Marina'))));
+      await clic(consola, 'mi-escenario'); // vuelve a backstage y se repite la medición normal, sin retraso
+      await esperar(consola, JS.noHay('[data-testid="lista-escenario"] [data-testid="mosaico-Marina"]'));
+      await consola.evaluate('window.__retardoCamara = 0');
+      await dormir(600);
+
       const t0 = ahora();
+      const vivos = () => consola.evaluate(`(window.__flujos || []).filter((f) => f.getVideoTracks().some((t) => t.readyState === 'live')).length`);
+      const vivosAntes = Number(await vivos());
       await clic(consola, 'mi-escenario');
       await Promise.all(NOMBRES.map((n) => esperar(paginas[n], JS.videoSonando('Marina'))));
       anotar('La moderadora sube al escenario y los tres la ven', true, `${Math.round(ahora() - t0)} ms`);
+      const vivosDespues = Number(await vivos());
+      anotar('La cámara de la consola no se cerró para volver a abrirse: la vista previa sigue viva mientras transmite', vivosAntes >= 1 && vivosDespues > vivosAntes, `${vivosAntes} flujos vivos antes, ${vivosDespues} después`);
     }
 
     await dormir(500);
@@ -786,6 +803,36 @@ async function main() {
       anotar('Si no regresa, desaparece sola de backstage', true, `${seFue} s`);
       const enLobbyVisible = await consola.evaluate(() => !!document.querySelector('[data-testid="fila-lobby-Eva"]'));
       anotar('Y tampoco aparece en el lobby mientras siga sin conexión', !enLobbyVisible);
+    }
+
+    // ── Salir por voluntad propia (derecho a retirarse): botón en todos los lugares, con confirmación; sale al instante de la consola y puede volver a entrar ──
+    {
+      const fabi = await entrarComo('Fabi');
+      await esperar(consola, JS.enSeccion('lista-lobby', 'Fabi'));
+      anotar('Hay un botón «Salir» en el lobby', !!(await fabi.$('[data-testid="salir"]')));
+      await clic(consola, 'llamar-Fabi'); await esperar(fabi, JS.lugar('verde')); await esperar(consola, JS.hay('[data-testid="panel-verde-Fabi"]'));
+      anotar('Hay un botón «Salir» también en la sala verde', !!(await fabi.$('[data-testid="salir"]')));
+      await clic(fabi, 'salir');
+      await esperar(fabi, JS.hay('[data-testid="confirmar-salida"]'));
+      anotar('Al tocar «Salir» pide confirmación y todavía no se sale', (await fabi.evaluate(() => document.body.innerText.includes('¿Salir de la sesión?'))) && !!(await consola.$('[data-testid="panel-verde-Fabi"]')));
+      await clic(fabi, 'seguir-en-sesion');
+      await esperar(fabi, JS.noHay('[data-testid="confirmar-salida"]'));
+      anotar('«Quedarme» cierra la confirmación y sigue en la sala verde', (await fabi.$eval('[data-testid="dentro"]', (el) => el.getAttribute('data-lugar'))) === 'verde' && !!(await consola.$('[data-testid="panel-verde-Fabi"]')));
+
+      const tSalida = ahora();
+      await clic(fabi, 'salir'); await esperar(fabi, JS.hay('[data-testid="confirmar-salir"]')); await clic(fabi, 'confirmar-salir');
+      await esperar(fabi, JS.hay('[data-testid="despedida"]'));
+      anotar('Al confirmar, su pantalla dice «Saliste de la sesión» y ofrece volver a entrar', (await fabi.evaluate(() => document.body.innerText.includes('Saliste de la sesión'))) && !!(await fabi.$('[data-testid="volver-a-entrar"]')));
+      await esperar(consola, JS.noHay('[data-testid="panel-verde-Fabi"]'), null, 8000);
+      const msSalida = Math.round(ahora() - tSalida);
+      anotar('Desaparece de la sala verde de la consola al instante, sin esperar el plazo de desconexión (30 s)', msSalida < 5000, `${msSalida} ms`);
+      await dormir(500); // medio segundo, mucho menos que los 4 s que el canal espera para dar por desconectado a quien cierra la pestaña
+      anotar('Y tampoco aparece en el lobby (con su botón «Llamar») como si siguiera conectado', !(await consola.$('[data-testid="fila-lobby-Fabi"]')));
+
+      await clic(fabi, 'volver-a-entrar');
+      await esperar(fabi, JS.lugar('lobby')); await esperar(consola, JS.enSeccion('lista-lobby', 'Fabi'));
+      anotar('«Volver a entrar» lo regresa al lobby con el mismo link, sin repetir el aviso ni el nombre', true);
+      await fabi.close();
     }
 
     // ── Terminar ──

@@ -101,6 +101,13 @@ describe('qué se le pide a la cámara', () => {
     expect(restriccionesDeVideo(undefined, true)).toEqual({});
   });
 
+  it('la vista previa de la consola pide lo mismo que LiveKit al transmitir (1280×720), para que la cámara abierta se reutilice', () => {
+    expect(restriccionesDeVideo(undefined, false, 'alta')).toEqual({ width: { ideal: 1280 }, height: { ideal: 720 } });
+    expect(restriccionesDeVideo('cam1', false, 'alta')).toEqual({ deviceId: { exact: 'cam1' }, width: { ideal: 1280 }, height: { ideal: 720 } });
+    expect(restriccionesDeVideo('cam1', false)).toEqual({ deviceId: { exact: 'cam1' }, width: { ideal: 640 }, height: { ideal: 360 } }); // por defecto sigue ligera
+    expect(restriccionesDeVideo('cam1', true, 'alta')).toEqual({ deviceId: { exact: 'cam1' } }); // en celular nunca se fuerza una forma
+  });
+
   it('la cámara que se publica en la sala sigue la misma regla', () => {
     expect(opcionesDeCamara('cam1', false)).toEqual({ deviceId: 'cam1', resolution: { width: 640, height: 360, frameRate: 20 } });
     const cel = opcionesDeCamara('cam1', true);

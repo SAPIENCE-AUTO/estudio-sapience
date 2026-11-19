@@ -64,4 +64,6 @@ export const api = {
   infoLink: (codigo: string) => pedir<{ nombre: string }>(`/p/${codigo}`),
   entrar: (codigo: string, nombre: string) => pedir<RespuestaEntrar>(`/p/${codigo}/entrar`, { cuerpo: { nombre, aceptoAviso: true } }),
   livekitActual: (pase: string) => pedir<RespuestaEntrar['livekit']>('/yo/livekit', { pase }),
+  /** El participante se retira por su cuenta: el servidor lo regresa al lobby al instante (no espera el plazo de desconexión) y la pantalla se desconecta. */
+  salirParticipante: (pase: string) => pedir<RespuestaAccion>('/yo/salir', { pase }),
 };

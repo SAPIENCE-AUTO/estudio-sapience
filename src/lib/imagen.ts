@@ -65,9 +65,12 @@ export function medidasPropias(video: Medida, limites: LimitesPropios): { aspect
  * En celular NO se fuerza una forma: forzar horizontal hace que el navegador recorte la imagen vertical al tomarla
  * y la cara se pierde antes de enviarse; sin pedido, la cámara entrega su forma natural (en vertical, más alta que ancha).
  */
-export function restriccionesDeVideo(camaraId: string | undefined, tactil: boolean): MediaTrackConstraints {
+export function restriccionesDeVideo(camaraId: string | undefined, tactil: boolean, calidad: 'ligera' | 'alta' = 'ligera'): MediaTrackConstraints {
   const base: MediaTrackConstraints = camaraId ? { deviceId: { exact: camaraId } } : {};
-  return tactil ? base : { ...base, width: { ideal: 640 }, height: { ideal: 360 } };
+  if (tactil) return base;
+  // «alta» = lo mismo que pide LiveKit por defecto al transmitir al equipo (1280×720): así, si la vista previa se mantiene abierta, el navegador
+  // reutiliza esa misma captura de la cámara en vez de reconfigurarla o arrancarla de cero al empezar a transmitir.
+  return calidad === 'alta' ? { ...base, width: { ideal: 1280 }, height: { ideal: 720 } } : { ...base, width: { ideal: 640 }, height: { ideal: 360 } };
 }
 
 /** Lo mismo para la cámara que se publica en la sala (LiveKit pone 1280×720 si no se le dice nada, y eso también fuerza horizontal). */

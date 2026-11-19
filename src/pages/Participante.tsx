@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { ConnectionState, Room, RoomEvent, Track, type RemoteAudioTrack } from 'livekit-client';
-import { Mic, MicOff, Video as IconoVideo, VideoOff } from 'lucide-react';
+import { LogOut, Mic, MicOff, Video as IconoVideo, VideoOff } from 'lucide-react';
 import type { EstadoParticipante, Lugar, RespuestaEntrar } from '../../compartido/tipos';
 import { api, ErrorApi } from '../lib/api';
 import { useCanal } from '../lib/canal';
@@ -49,6 +49,7 @@ export default function Participante() {
   const [errorEntrada, setErrorEntrada] = useState<string | null>(null);
   const [entrando, setEntrando] = useState(false);
   const [acepto, setAcepto] = useState(false);
+  const [salio, setSalio] = useState(false); // se retiró por su cuenta: se desmonta `Dentro` (se cierran LiveKit y el canal) y se muestra la despedida
 
   useEffect(() => {
     if (paso !== 'cargando') return;
@@ -115,7 +116,23 @@ export default function Participante() {
     );
   }
 
-  return <Dentro entrada={entrada!} camId={camId} micId={micId} />;
+  if (salio) return <Despedida onVolver={() => setSalio(false)} />;
+  return <Dentro entrada={entrada!} camId={camId} micId={micId} onSalir={() => setSalio(true)} />;
+}
+
+/** Lo que ve quien se retiró. «Volver a entrar» lo regresa al lobby con el mismo link, sin repetir el aviso de privacidad ni el nombre. */
+function Despedida({ onVolver }: { onVolver: () => void }) {
+  return (
+    <Marco>
+      <Tarjeta className="flex flex-col gap-3" >
+        <div data-testid="despedida">
+          <h1 className="text-lg font-semibold">Saliste de la sesión</h1>
+          <p className="mt-1 text-[13px] leading-5 text-tenue">Gracias por tu tiempo. Ya no te ven ni te oyen. Si saliste sin querer, puedes volver a entrar.</p>
+        </div>
+        <BotonPrincipal data-testid="volver-a-entrar" onClick={onVolver}>Volver a entrar</BotonPrincipal>
+      </Tarjeta>
+    </Marco>
+  );
 }
 
 // ───────────────────────── Probar dispositivos ─────────────────────────
@@ -195,7 +212,7 @@ function PruebaDeDispositivos({ nombre, camId, micId, setCamId, setMicId, entran
 // ───────────────────────── Ya dentro: lobby, sala verde, backstage y escenario ─────────────────────────
 const etiquetaLugar: Record<Lugar, string> = { lobby: 'En el lobby', verde: 'Con el equipo', backstage: 'En espera', escenario: 'En pantalla' };
 
-function Dentro({ entrada, camId, micId }: { entrada: RespuestaEntrar; camId?: string; micId?: string }) {
+function Dentro({ entrada, camId, micId, onSalir }: { entrada: RespuestaEntrar; camId?: string; micId?: string; onSalir: () => void }) {
   const { estado, conectado } = useCanal<EstadoParticipante>({ rol: 'participante', sid: entrada.sesionId, pase: entrada.pase });
   const [room, setRoom] = useState<Room | null>(null);
   useCambiosDeSala(room);
@@ -237,6 +254,8 @@ function Dentro({ entrada, camId, micId }: { entrada: RespuestaEntrar; camId?: s
   const silenciadoRef = useRef(false);
   silenciadoRef.current = silenciado;
   // Lo que la persona decide con sus botones manda SIEMPRE: cambiar de lugar o de equipo no le vuelve a encender nada.
+  const [confirmandoSalida, setConfirmandoSalida] = useState(false);
+  const [saliendo, setSaliendo] = useState(false);
   const [quiereMic, setQuiereMic] = useState(true);
   const [quiereCam, setQuiereCam] = useState(true);
   const quiere = useRef({ mic: true, cam: true });
@@ -284,6 +303,12 @@ function Dentro({ entrada, camId, micId }: { entrada: RespuestaEntrar; camId?: s
   const chip = (
     <span data-testid="chip-lugar" className={`rounded-md px-2.5 py-1 text-xs font-semibold ${lugar === 'escenario' ? 'bg-teal text-white' : 'bg-teal-claro text-teal'}`}>{etiquetaLugar[yo.lugar]}</span>
   );
+  // Salir por voluntad propia: el servidor lo regresa al lobby al instante y la pantalla cierra LiveKit y el canal (ver `onSalir` en Participante).
+  const salir = async () => {
+    setSaliendo(true);
+    try { await api.salirParticipante(entrada.pase); } catch { /* aunque falle el aviso se sale: al cerrarse la conexión el servidor lo regresa al lobby */ }
+    onSalir();
+  };
   const punto = (
     <span title={conectado && conectadoLK ? 'Conexión buena' : 'Reconectando…'} className={`inline-block h-2.5 w-2.5 rounded-full ${conectado && conectadoLK ? 'bg-ok' : 'bg-aviso'}`} />
   );
@@ -297,7 +322,13 @@ function Dentro({ entrada, camId, micId }: { entrada: RespuestaEntrar; camId?: s
             <span className="punto-vivo inline-block h-2 w-2 rounded-full bg-[#d32222]" aria-hidden="true" />EN VIVO
           </span>
         )}
-        {punto}
+        <div className="flex items-center gap-3">
+          <button data-testid="salir" onClick={() => setConfirmandoSalida(true)} title="Salir de la sesión"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-tenue hover:bg-gris-boton">
+            <LogOut size={14} aria-hidden="true" />Salir
+          </button>
+          {punto}
+        </div>
       </div>
       {sonidos.map((t) => <AudioRemoto key={t.sid} pista={t} />)}
       {room && !room.canPlaybackAudio && (
@@ -376,6 +407,19 @@ function Dentro({ entrada, camId, micId }: { entrada: RespuestaEntrar; camId?: s
             className={`flex h-[56px] w-[56px] items-center justify-center rounded-full text-white ${camEncendida ? 'bg-teal' : 'bg-peligro'}`}>
             {camEncendida ? <IconoVideo size={24} aria-hidden="true" /> : <VideoOff size={24} aria-hidden="true" />}
           </button>
+        </div>
+      )}
+
+      {confirmandoSalida && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center" role="dialog" aria-modal="true" aria-labelledby="titulo-salir" data-testid="confirmar-salida">
+          <div className="flex w-full max-w-sm flex-col gap-3 rounded-2xl bg-tarjeta p-5">
+            <div>
+              <h2 id="titulo-salir" className="text-lg font-semibold">¿Salir de la sesión?</h2>
+              <p className="mt-1 text-[13px] leading-5 text-tenue">Dejarán de verte y de oírte. Si fue sin querer, puedes volver a entrar con tu link.</p>
+            </div>
+            <button data-testid="confirmar-salir" disabled={saliendo} onClick={() => void salir()} className="h-12 rounded-xl bg-peligro px-5 text-[15px] font-semibold text-white">{saliendo ? 'Saliendo…' : 'Salir'}</button>
+            <button data-testid="seguir-en-sesion" disabled={saliendo} onClick={() => setConfirmandoSalida(false)} className="h-12 rounded-xl bg-gris-boton px-5 text-[15px] font-semibold text-teal">Quedarme</button>
+          </div>
         </div>
       )}
     </div>

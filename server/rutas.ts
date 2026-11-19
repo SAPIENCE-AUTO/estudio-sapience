@@ -217,8 +217,13 @@ export function crearRutas(): express.Router {
     res.json(await servicio.mensajeDeParticipante(req.pase!.sid, req.pase!.pid, texto));
   }));
 
+  // Salir por voluntad propia (botón «Salir» del participante): regresa al lobby y se marca DESCONECTADO al instante. Si no, la persona se vería en el
+  // lobby de la consola (con su botón «Llamar») los ~4 s que el canal espera antes de dar por desconectado a alguien que cerró la pestaña.
   r.post('/yo/salir', exigirPase, ruta(async (req: ConPase, res) => {
-    res.json(await servicio.regresarALobby(req.pase!.sid, req.pase!.pid));
+    const { sid, pid } = req.pase!;
+    const resultado = await servicio.regresarALobby(sid, pid);
+    await servicio.conexion(sid, { participanteId: pid }, false);
+    res.json(resultado);
   }));
 
   return r;

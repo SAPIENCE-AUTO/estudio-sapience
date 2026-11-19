@@ -6,6 +6,7 @@ export function mediosFalsos(ancho = 640, alto = 360): string {
   return `(() => {
   window.__TRAZA = true;
   window.__pedidos = []; // lo que la página le pidió a la cámara (para revisar que en celular no se fuerza una forma)
+  window.__flujos = []; // los flujos que abrió (para revisar cuáles siguen vivos)
   let contexto = null;
   const crearFlujo = (video, audio) => {
     const flujo = new MediaStream();
@@ -22,9 +23,11 @@ export function mediosFalsos(ancho = 640, alto = 360): string {
       const d = contexto.createMediaStreamDestination(); osc.connect(g); g.connect(d); osc.start();
       d.stream.getAudioTracks().forEach((t) => flujo.addTrack(t));
     }
+    window.__flujos.push(flujo);
     return flujo;
   };
-  navigator.mediaDevices.getUserMedia = async (c) => { if (c && c.video) window.__pedidos.push(JSON.stringify(c.video)); return crearFlujo(!!(c && c.video), !!(c && c.audio)); };
+  // __retardoCamara (ms) simula una cámara real que tarda en arrancar en frío
+  navigator.mediaDevices.getUserMedia = async (c) => { if (c && c.video) window.__pedidos.push(JSON.stringify(c.video)); if (c && c.video && window.__retardoCamara) await new Promise((r) => setTimeout(r, window.__retardoCamara)); return crearFlujo(!!(c && c.video), !!(c && c.audio)); };
   navigator.mediaDevices.enumerateDevices = async () => [
     { deviceId: 'cam-de-prueba', kind: 'videoinput', label: 'Cámara de prueba', groupId: 'g1' },
     { deviceId: 'mic-de-prueba', kind: 'audioinput', label: 'Micrófono de prueba', groupId: 'g1' },
