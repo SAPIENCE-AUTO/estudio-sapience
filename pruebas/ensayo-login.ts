@@ -1,7 +1,8 @@
 // Ensayo del login del equipo SIN tocar el Supabase real ni mandar correos: levanta un Supabase de mentira
 // (/auth/v1/otp, /auth/v1/verify, /auth/v1/user) y un servidor de Talks en modo `supabase` apuntando a él,
 // con la interfaz ya compilada (npm run build). Prueba en un Chrome de verdad: pedir enlace, entrar con el enlace,
-// ver «Este correo no tiene acceso», correo desconocido, salir, y que el canal en vivo abra con boleto.
+// ver «Este correo no tiene acceso», correo desconocido, salir, y que el canal en vivo abra con boleto. También el acceso directo desde
+// el Hub (pase de un solo uso, sin correo).
 // Datos inventados (@ejemplo.test). Uso: npm run ensayo-login
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -9,6 +10,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import puppeteer, { type Page } from 'puppeteer-core';
+import { crearFirmador } from '../server/acceso';
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const RAIZ = process.cwd();
@@ -18,6 +20,7 @@ const WEB = `http://localhost:${PUERTO_TALKS}`;
 const SUPABASE = `http://localhost:${PUERTO_FALSO}`;
 
 const LLAVE_DEL_HUB = 'llave-del-hub-de-prueba'; // inventada
+const SECRETO_DE_PRUEBA = 'secreto-de-prueba-'.padEnd(48, 'x'); // inventado: el servidor del ensayo firma con este, y así la prueba puede firmar igual
 const DEL_EQUIPO = 'moderadora@ejemplo.test';
 const SIN_PERMISO = 'visita@ejemplo.test'; // existe en «Supabase» pero no está en EQUIPO_PERMITIDO
 const DESCONOCIDO = 'nadie@ejemplo.test'; // no existe en «Supabase»
@@ -86,7 +89,7 @@ async function main() {
   await new Promise<void>((ok) => falso.listen(PUERTO_FALSO, ok));
 
   const entorno = { ...process.env, PORT: String(PUERTO_TALKS), AUTH_MODE: 'supabase', NODE_ENV: 'development', URL_PUBLICA: WEB,
-    SUPABASE_URL: SUPABASE, SUPABASE_ANON_KEY: 'llave-anon-de-mentira', EQUIPO_PERMITIDO: DEL_EQUIPO, HUB_API_KEY: LLAVE_DEL_HUB };
+    SUPABASE_URL: SUPABASE, SUPABASE_ANON_KEY: 'llave-anon-de-mentira', EQUIPO_PERMITIDO: DEL_EQUIPO, HUB_API_KEY: LLAVE_DEL_HUB, APP_SECRET: SECRETO_DE_PRUEBA };
   const tsx = path.join(RAIZ, 'node_modules/.bin/tsx');
   const hijo = spawn(tsx, ['--env-file', path.join(RAIZ, '.env'), path.join(RAIZ, 'server/index.ts')], { cwd: trabajo, env: entorno, stdio: ['ignore', 'pipe', 'pipe'] });
   let salida = '';
@@ -199,6 +202,111 @@ async function main() {
       await p.waitForSelector('[data-testid="salir"]', { timeout: 8000 });
       await p.click('[data-testid="salir"]');
       anotar('«Salir» regresa a pedir el correo', await p.waitForSelector('[data-testid="entrar-correo"]', { timeout: 8000 }).then(() => true, () => false));
+
+      // 10. Acceso directo desde el Hub: un pase de un solo uso, sin pedir correo
+      // null = sin encabezado de autorización (con undefined, JavaScript usaría la llave por defecto)
+      const pase = (cuerpo: object, autorizacion: string | null = `Bearer ${LLAVE_DEL_HUB}`) => fetch(`${WEB}/api/v1/acceso-equipo`, {
+        method: 'POST', headers: { 'content-type': 'application/json', ...(autorizacion ? { authorization: autorizacion } : {}) }, body: JSON.stringify(cuerpo),
+      });
+      const canjear = (codigo: string) => fetch(`${WEB}/api/equipo/canjear`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ codigo }) });
+      const sesionHub = await (await fetch(`${WEB}/api/v1/sesiones`, {
+        method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${LLAVE_DEL_HUB}` }, body: JSON.stringify({ nombre: 'Sesión del Hub', externoId: 'evento-hub-1' }),
+      })).json() as { id: string };
+
+      anotar('Pedir un pase sin llave da 401', (await pase({ email: DEL_EQUIPO }, null)).status === 401);
+      anotar('Pedir un pase con una llave equivocada da 401', (await pase({ email: DEL_EQUIPO }, 'Bearer llave-equivocada')).status === 401);
+      const tokenPersona = `tok_pase_${DEL_EQUIPO}`; tokens.set(tokenPersona, DEL_EQUIPO);
+      anotar('Una persona del equipo con su sesión NO puede pedirse un pase (solo el Hub con su llave)', (await pase({ email: DEL_EQUIPO }, `Bearer ${tokenPersona}`)).status === 401);
+      anotar('Un correo fuera de la lista da 403', (await pase({ email: SIN_PERMISO })).status === 403);
+      anotar('Un correo mal escrito da 400', (await pase({ email: 'no-es-correo' })).status === 400);
+      anotar('Una sesión que no existe da 404', (await pase({ email: DEL_EQUIPO, sesionId: 'no-existe' })).status === 404);
+      anotar('«constructor» no existe como sesión (404), aunque sea una palabra de JavaScript', (await pase({ email: DEL_EQUIPO, sesionId: 'constructor' })).status === 404);
+      anotar('Un id de sesión con caracteres raros da 400', (await pase({ email: DEL_EQUIPO, sesionId: '../x' })).status === 400);
+      anotar('El correo se compara sin importar mayúsculas', (await pase({ email: DEL_EQUIPO.toUpperCase() })).status === 201);
+
+      const rPase = await pase({ email: DEL_EQUIPO, sesionId: sesionHub.id });
+      const jPase = await rPase.json() as { url: string; venceEnSegundos: number };
+      anotar('Con la llave del Hub y un correo del equipo da el pase (201), que vale 60 segundos', rPase.status === 201 && jPase.venceEnSegundos === 60, `estado ${rPase.status}`);
+      anotar('El pase va en la parte «#» de la dirección, no en la consulta (así no llega a los registros)', jPase.url.startsWith(`${WEB}/entrar-hub#c=`) && !jPase.url.includes('?'));
+
+      const paseApi = ((await (await pase({ email: DEL_EQUIPO })).json()) as { url: string }).url.split('#c=')[1] ?? '';
+      const c1 = await canjear(paseApi);
+      const j1 = await c1.json() as { token: string; email: string; destino: string; venceEn: number };
+      anotar('Canjear el pase da una sesión del equipo y a dónde ir', c1.status === 200 && !!j1.token && j1.email === DEL_EQUIPO && j1.destino === '/', `estado ${c1.status}`);
+      anotar('La sesión dura unas 12 horas', j1.venceEn - Date.now() > 11.9 * 3600e3 && j1.venceEn - Date.now() <= 12 * 3600e3);
+      anotar('El mismo pase no sirve una segunda vez (401)', (await canjear(paseApi)).status === 401);
+      anotar('Un pase inventado da 401', (await canjear('pase-inventado-que-no-existe-1234567890')).status === 401);
+      const yoHub = await fetch(`${WEB}/api/equipo/yo`, { headers: { authorization: `Bearer ${j1.token}` } });
+      anotar('La sesión que da el Hub abre las rutas del equipo', yoHub.status === 200 && ((await yoHub.json()) as { email: string }).email === DEL_EQUIPO);
+      anotar('…y se comprueba en Talks mismo, sin preguntarle a Supabase', !consultasUsuario.includes(j1.token));
+      const alterado = j1.token.slice(0, -3) + (j1.token.endsWith('aaa') ? 'bbb' : 'aaa');
+      anotar('Una sesión alterada no pasa (401)', (await fetch(`${WEB}/api/equipo/yo`, { headers: { authorization: `Bearer ${alterado}` } })).status === 401);
+      anotar('Esa sesión también abre el boleto del canal en vivo', (await fetch(`${WEB}/api/sesiones/${sesionHub.id}/equipo/boleto`, { method: 'POST', headers: { authorization: `Bearer ${j1.token}` } })).status === 200);
+
+      // La lista manda siempre: una sesión BIEN FIRMADA de alguien que ya no está en EQUIPO_PERMITIDO no pasa (403)
+      const firmaPrueba = crearFirmador(SECRETO_DE_PRUEBA);
+      const deAlguienFuera = firmaPrueba.firmar('equipo', { email: SIN_PERMISO, nombre: 'Visita' }, 3600e3);
+      anotar('Una sesión del Hub bien firmada de alguien fuera de la lista da 403', (await fetch(`${WEB}/api/equipo/yo`, { headers: { authorization: `Bearer ${deAlguienFuera}` } })).status === 403);
+      const deAlguienDentro = firmaPrueba.firmar('equipo', { email: DEL_EQUIPO, nombre: 'Marina' }, 3600e3);
+      anotar('…y la misma firma para alguien de la lista sí pasa (la prueba firma igual que el servidor)', (await fetch(`${WEB}/api/equipo/yo`, { headers: { authorization: `Bearer ${deAlguienDentro}` } })).status === 200);
+      const vencida = crearFirmador(SECRETO_DE_PRUEBA, () => Date.now() - 2 * 3600e3).firmar('equipo', { email: DEL_EQUIPO, nombre: 'Marina' }, 3600e3);
+      anotar('Una sesión del Hub vencida da 401', (await fetch(`${WEB}/api/equipo/yo`, { headers: { authorization: `Bearer ${vencida}` } })).status === 401);
+      const comoPase = firmaPrueba.firmar('pase', { sid: 's1', pid: 'p1', email: DEL_EQUIPO, nombre: 'Marina' }, 3600e3);
+      anotar('Un pase de participante NO abre las rutas del equipo', (await fetch(`${WEB}/api/equipo/yo`, { headers: { authorization: `Bearer ${comoPase}` } })).status === 401);
+
+      // En un Chrome limpio (sin ninguna sesión): el enlace del Hub abre directo la consola de esa sesión
+      const ctx = await nav.createBrowserContext();
+      const h = await ctx.newPage();
+      const erroresH: string[] = [];
+      h.on('pageerror', (e) => erroresH.push(String(e)));
+      const socketsH: string[] = [];
+      const cdpH = await h.createCDPSession();
+      await cdpH.send('Network.enable');
+      cdpH.on('Network.webSocketCreated', (e) => socketsH.push(e.url));
+      const correosAntes = enlacesPedidos.length;
+      const dirPase = ((await (await pase({ email: DEL_EQUIPO, sesionId: sesionHub.id })).json()) as { url: string }).url;
+      await h.goto(dirPase, { waitUntil: 'domcontentloaded' });
+      anotar('Con el enlace del Hub se abre la consola de esa sesión, sin pedir correo', await h.waitForSelector('[data-testid="consola"]', { timeout: 10000 }).then(() => true, () => false), h.url());
+      anotar('La dirección ya no trae el pase y quedó en la consola', !h.url().includes('#c=') && h.url() === `${WEB}/equipo/${sesionHub.id}`, h.url());
+      anotar('No se pidió ningún correo de acceso', enlacesPedidos.length === correosAntes);
+      await dormir(1200);
+      const guardado = await h.evaluate(() => localStorage.getItem('talks:acceso-hub'));
+      const tokenGuardado = guardado ? (JSON.parse(guardado) as { token: string }).token : '';
+      const canalH = socketsH.find((u) => u.includes('/ws?'));
+      anotar('El canal en vivo abre con boleto, sin la sesión ni el pase en la dirección', !!canalH && canalH.includes('boleto=') && !!tokenGuardado && !canalH.includes(tokenGuardado) && !canalH.includes(dirPase.split('#c=')[1] ?? 'x'), canalH ? canalH.replace(/boleto=[^&]+/, 'boleto=…') : 'sin canal');
+      await h.reload({ waitUntil: 'domcontentloaded' });
+      anotar('Al recargar sigue adentro (la sesión del Hub se guardó)', await h.waitForSelector('[data-testid="consola"]', { timeout: 10000 }).then(() => true, () => false));
+
+      // El mismo enlace en otro Chrome limpio: ya se gastó
+      const ctx2 = await nav.createBrowserContext();
+      const h2 = await ctx2.newPage();
+      await h2.goto(dirPase, { waitUntil: 'domcontentloaded' });
+      anotar('El mismo enlace del Hub no sirve dos veces: lo dice con claridad', await h2.waitForSelector('[data-testid="entrar-hub-error"]', { timeout: 10000 }).then(() => true, () => false));
+      anotar('…y no deja pasar a la consola', (await h2.$('[data-testid="consola"]')) === null);
+      await h2.click('[data-testid="entrar-hub-error"] button');
+      anotar('«Entrar con mi correo» lleva al acceso normal', await h2.waitForSelector('[data-testid="entrar-correo"]', { timeout: 8000 }).then(() => true, () => false));
+      await h2.goto(`${WEB}/entrar-hub`, { waitUntil: 'domcontentloaded' });
+      anotar('Abrir /entrar-hub sin pase avisa que no sirve', await h2.waitForSelector('[data-testid="entrar-hub-error"]', { timeout: 8000 }).then(() => true, () => false));
+      await ctx2.close();
+
+      // Salir con la sesión del Hub
+      await h.goto(WEB, { waitUntil: 'domcontentloaded' });
+      await h.waitForSelector('[data-testid="salir"]', { timeout: 8000 });
+      await h.click('[data-testid="salir"]');
+      anotar('«Salir» con la sesión del Hub regresa a pedir el correo', await h.waitForSelector('[data-testid="entrar-correo"]', { timeout: 8000 }).then(() => true, () => false));
+      anotar('…y borra la sesión guardada', (await h.evaluate(() => localStorage.getItem('talks:acceso-hub'))) === null);
+      await h.reload({ waitUntil: 'domcontentloaded' });
+      anotar('Recargar después de salir sigue pidiendo el correo', await h.waitForSelector('[data-testid="entrar-correo"]', { timeout: 8000 }).then(() => true, () => false));
+
+      // Una sesión del Hub vencida o que el servidor no reconoce: se pide el correo, con aviso
+      await h.evaluate(() => localStorage.setItem('talks:acceso-hub', JSON.stringify({ token: 'x.y', email: 'moderadora@ejemplo.test', nombre: 'M', venceEn: Date.now() - 1000 })));
+      await h.reload({ waitUntil: 'domcontentloaded' });
+      anotar('Una sesión del Hub vencida se ignora y se pide el correo', await h.waitForSelector('[data-testid="entrar-correo"]', { timeout: 8000 }).then(() => true, () => false));
+      await h.evaluate(() => localStorage.setItem('talks:acceso-hub', JSON.stringify({ token: 'inventada.inventada', email: 'moderadora@ejemplo.test', nombre: 'M', venceEn: Date.now() + 3600e3 })));
+      await h.reload({ waitUntil: 'domcontentloaded' });
+      anotar('Una sesión del Hub falsa no deja pasar: pide el correo y avisa', await h.waitForSelector('[data-testid="entrar-correo"]', { timeout: 8000 }).then(() => true, () => false) && await esperarTexto(h, 'venció'));
+      anotar('Sin errores de JavaScript en el acceso desde el Hub', erroresH.length === 0, erroresH.join(' | '));
+      await ctx.close();
 
       // 9. Los participantes nunca descargan Supabase ni piden login
       const part = await nav.newPage();

@@ -155,6 +155,9 @@ export interface RespuestaAccion {
   v: number;
 }
 
+/** Lo que Talks da a cambio del pase del Hub: la sesión del equipo (firmada, 12 horas) y a dónde ir. */
+export interface RespuestaCanje { token: string; email: string; nombre: string; destino: string; venceEn: number }
+
 export interface RespuestaTokenEquipo {
   url: string;
   token: string;

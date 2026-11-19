@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ErrorApi } from '../lib/api';
-import { cerrarSesionEquipo, clienteSupabase, configPublica } from '../lib/acceso';
+import { cerrarSesionEquipo, clienteSupabase, configPublica, EVENTO_SALIO, leerAccesoHub } from '../lib/acceso';
 import Entrar from '../pages/Entrar';
 
 type Fase = 'cargando' | 'libre' | 'entrar' | 'sin-acceso' | 'error';
@@ -24,8 +24,11 @@ export default function ProtegidoEquipo({ children }: { children: React.ReactNod
     try {
       const c = await configPublica();
       if (c.authMode !== 'supabase') { setFase('libre'); return; }
-      const { data } = await (await clienteSupabase()).auth.getSession();
-      if (!data.session) { setDetalle(''); setFase('entrar'); return; }
+      // Quien llegó desde el Hub trae su sesión de Talks; si no, la del correo.
+      if (!leerAccesoHub()) {
+        const { data } = await (await clienteSupabase()).auth.getSession();
+        if (!data.session) { setDetalle(''); setFase('entrar'); return; }
+      }
       await api.yo();
       setFase('libre');
     } catch (e) {
@@ -39,6 +42,8 @@ export default function ProtegidoEquipo({ children }: { children: React.ReactNod
     let vivo = true;
     let baja: (() => void) | undefined;
     void revisar();
+    const alSalir = () => { if (vivo) { setDetalle(''); setFase('entrar'); } };
+    window.addEventListener(EVENTO_SALIO, alSalir);
     void (async () => {
       try {
         const c = await configPublica();
@@ -55,7 +60,7 @@ export default function ProtegidoEquipo({ children }: { children: React.ReactNod
         if (!vivo) baja();
       } catch { /* sin configuración: ya lo muestra revisar() */ }
     })();
-    return () => { vivo = false; baja?.(); };
+    return () => { vivo = false; baja?.(); window.removeEventListener(EVENTO_SALIO, alSalir); };
   }, [revisar]);
 
   if (fase === 'libre') return <>{children}</>;

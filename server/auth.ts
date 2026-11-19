@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import { config } from './config';
 import { crearFirmador, crearVerificadorEquipo, ErrorAcceso, leerLista, type UsuarioEquipo, type UsuarioSupabase } from './acceso';
+import { crearBuzonDePases, TTL_SESION_EQUIPO_MS } from './accesoHub';
 
 export { ErrorAcceso, type UsuarioEquipo };
 
@@ -53,9 +54,25 @@ async function usuarioDeSupabase(token: string): Promise<UsuarioSupabase | null>
   return (await r.json()) as UsuarioSupabase;
 }
 
+const permitidosDelEquipo = new Set(leerLista(config.EQUIPO_PERMITIDO));
+
+/** ¿Este correo es del equipo? En modo dev no hay lista (no hay login): todos. En producción solo los de EQUIPO_PERMITIDO. */
+export const correoPermitido = (email: string): boolean => config.AUTH_MODE !== 'supabase' || permitidosDelEquipo.has(email.trim().toLowerCase());
+
 const verificarSupabase = config.AUTH_MODE === 'supabase'
-  ? crearVerificadorEquipo({ obtenerUsuario: usuarioDeSupabase, permitidos: leerLista(config.EQUIPO_PERMITIDO) })
+  ? crearVerificadorEquipo({ obtenerUsuario: usuarioDeSupabase, permitidos: [...permitidosDelEquipo] })
   : null;
+
+// ---- Acceso directo desde el Hub: pase de un solo uso (60 s) que se cambia por una sesión del equipo firmada (12 h) ----
+// Ver server/accesoHub.ts. La sesión firmada NO se parece a un token de Supabase ni a un pase de participante (tipo distinto).
+export const buzonDePasesHub = crearBuzonDePases();
+
+export const firmarSesionEquipo = (u: UsuarioEquipo): string => sellos.firmar('equipo', { email: u.email, nombre: u.nombre }, TTL_SESION_EQUIPO_MS);
+
+export function leerSesionEquipo(token: string | undefined | null): UsuarioEquipo | null {
+  const d = sellos.leer<UsuarioEquipo>('equipo', token);
+  return d?.email && d.nombre ? { email: d.email, nombre: d.nombre } : null;
+}
 
 /**
  * Quién es del equipo. En modo dev no hay login: se acepta el usuario de prueba, o el que mande la prueba automática
@@ -65,7 +82,15 @@ const verificarSupabase = config.AUTH_MODE === 'supabase'
 export async function equipoDesdeSolicitud(req: IncomingMessage): Promise<UsuarioEquipo> {
   if (verificarSupabase) {
     const h = req.headers.authorization ?? '';
-    return verificarSupabase(h.startsWith('Bearer ') ? h.slice(7) : null);
+    const token = h.startsWith('Bearer ') ? h.slice(7) : null;
+    // Primero la sesión que dio el acceso directo desde el Hub (se comprueba aquí mismo, sin red); si no es de ese tipo, es de Supabase.
+    const delHub = leerSesionEquipo(token);
+    if (delHub) {
+      // La lista manda siempre: quien salga de EQUIPO_PERMITIDO pierde el acceso aunque su sesión no haya vencido.
+      if (!correoPermitido(delHub.email)) throw new ErrorAcceso(403, 'SIN_ACCESO', 'Este correo no tiene acceso');
+      return delHub;
+    }
+    return verificarSupabase(token);
   }
   const correo = (req.headers['x-equipo-email'] as string | undefined) ?? config.DEV_EQUIPO_EMAIL;
   const nombre = (req.headers['x-equipo-nombre'] as string | undefined) ?? config.DEV_EQUIPO_NOMBRE;

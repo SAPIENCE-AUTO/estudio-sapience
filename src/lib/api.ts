@@ -1,4 +1,4 @@
-import type { RespuestaAccion, RespuestaEntrar, RespuestaTokenEquipo, CanalChat, ConfigChat, Diseno } from '../../compartido/tipos';
+import type { RespuestaAccion, RespuestaCanje, RespuestaEntrar, RespuestaTokenEquipo, CanalChat, ConfigChat, Diseno } from '../../compartido/tipos';
 import { tokenDeEquipo } from './acceso';
 
 export class ErrorApi extends Error {
@@ -36,6 +36,8 @@ export interface ResumenSesion {
 }
 
 export const api = {
+  /** Cambia el pase de un solo uso que dio el Hub por una sesión del equipo (no lleva credenciales: el pase es el secreto). */
+  canjearAcceso: (codigo: string) => pedir<RespuestaCanje>('/equipo/canjear', { cuerpo: { codigo } }),
   // equipo
   sesiones: () => pedir<ResumenSesion[]>('/sesiones', { equipo: true, metodo: 'GET' }),
   crearSesion: (nombre: string) => pedir<ResumenSesion>('/v1/sesiones', { equipo: true, cuerpo: { nombre } }),

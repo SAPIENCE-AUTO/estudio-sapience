@@ -67,6 +67,31 @@ Authorization: Bearer {TALKS_API_KEY}
 
 Misma respuesta que arriba (con `yaExistia: true`), o `404` si el evento todavía no tiene sesión. Sirve para decidir si el botón dice «Crear links de sesión» o «Abrir en Talks» sin crear nada.
 
+### Acceso directo: «Abrir en Talks» sin volver a pedir el correo
+
+El Hub y Talks son dos sitios distintos y el navegador no comparte el inicio de sesión entre sitios, así que sin esto Talks pide el correo aunque la persona ya esté dentro del Hub. Solución: el Hub, que ya sabe quién es, le pide a Talks un **pase de un solo uso** para ese correo.
+
+```
+POST {TALKS_URL}/api/v1/acceso-equipo
+Authorization: Bearer {TALKS_API_KEY}
+Content-Type: application/json
+
+{
+  "email": "ana@empresa.com",       // el correo de quien aprieta el botón, tomado de la sesión YA verificada del Hub (nunca de lo que mande el navegador)
+  "nombre": "Ana López",            // opcional, hasta 60; si falta, Talks lo arma con el correo
+  "sesionId": "s1a2b3c4d5e"         // opcional: el `id` de la sesión de Talks (`talks_session_id`); si falta, la persona llega al inicio de Talks
+}
+```
+
+Respuesta `201`: `{ "url": "https://www.talks.mx/entrar-hub#c=…", "venceEnSegundos": 60 }`. El Hub abre esa dirección y la persona cae directo en la consola de esa sesión.
+
+- Errores: `401` (llave mala), `403` con `error: "SIN_ACCESO"` (ese correo NO está en la lista del equipo de Talks, `EQUIPO_PERMITIDO` de Render), `404` (la sesión no existe), `400` (datos mal formados). El Hub NO debe quedarse atascado: ante cualquier error abre el `linkEquipo` normal (Talks pedirá el correo) y lo dice en español llano.
+- **El pase vale 60 segundos y sirve UNA sola vez.** Pedir uno nuevo en cada clic; no guardarlo, no copiarlo para otras personas, no escribirlo en registros (ni la `url` ni la respuesta). El botón de copiar el «link del equipo» sigue dando el `linkEquipo` normal (sin pase): quien lo reciba entra con su correo.
+- Va en la parte `#` de la dirección a propósito: esa parte no llega a ningún servidor, ni a los registros, ni al `referer`.
+- Los navegadores bloquean ventanas que se abren después de una espera: abrir primero una ventana en blanco con el clic (`const v = window.open('', '_blank')`) y, cuando llegue la `url`, poner `v.location.href = url`; si Talks falla, poner ahí el `linkEquipo`.
+- Qué hace Talks: cambia el pase por una **sesión del equipo propia de Talks** (firmada, 12 horas). Nunca se le pasa la sesión del Hub ni sus tokens. La lista `EQUIPO_PERMITIDO` se vuelve a revisar en cada llamada: quien salga de la lista pierde el acceso aunque su sesión no haya vencido.
+- Esta llamada SOLO acepta la llave del Hub (no la sesión de una persona), y la llave ahora abre la puerta del equipo además de crear sesiones: guardarla solo en el servidor del Hub, como hasta hoy.
+
 ## Lo que debe guardar el Hub
 
 Junto a la sala de observación del evento (`observation_sessions`): el `id` de la sesión de Talks, `linkEquipo` y `linkParticipantes` (columnas nuevas, por ejemplo `talks_session_id`, `talks_link_equipo`, `talks_link_participantes`). La llave de Mux ya la tiene.

@@ -45,7 +45,8 @@ async function transaccion<T>(sid: string, trabajo: (copia: d.Sesion) => Promise
 export function listarSesiones(): d.Sesion[] {
   return Object.values(sesiones).sort((a, b) => b.creadaEn - a.creadaEn);
 }
-export const sesionPorId = (sid: string) => sesiones[sid];
+// hasOwn: un id como «constructor» o «__proto__» no debe «existir» por herencia de los objetos de JavaScript.
+export const sesionPorId = (sid: string): d.Sesion | undefined => (Object.hasOwn(sesiones, sid) ? sesiones[sid] : undefined);
 export function sesionPorCodigo(codigo: string): d.Sesion | undefined {
   return Object.values(sesiones).find((s) => s.codigo === codigo);
 }

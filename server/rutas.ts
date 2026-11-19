@@ -3,7 +3,9 @@ import { z } from 'zod';
 import { config } from './config';
 import { ErrorDominio, idMiembro } from './dominio';
 import { PersonaDesconectada } from './livekit';
-import { equipoDesdeSolicitud, ErrorAcceso, esLlaveDelHub, firmarBoleto, leerGrabadora, pasePorEncabezado, type DatosPase, type UsuarioEquipo } from './auth';
+import { buzonDePasesHub, correoPermitido, equipoDesdeSolicitud, ErrorAcceso, esLlaveDelHub, firmarBoleto, firmarSesionEquipo, leerGrabadora, pasePorEncabezado, type DatosPase, type UsuarioEquipo } from './auth';
+import { destinoDeSesion, ID_SESION, TTL_PASE_HUB_MS, TTL_SESION_EQUIPO_MS } from './accesoHub';
+import { nombreDeCorreo } from './acceso';
 import * as servicio from './servicio';
 import type { Sesion } from './dominio';
 import { AJUSTES_DISENO, FONDOS_DISENO, FORMAS_DISENO, TIPOS_DISENO } from '../compartido/tipos';
@@ -46,6 +48,36 @@ export function crearRutas(): express.Router {
     res.set('cache-control', 'no-store');
     res.json(req.equipo);
   });
+
+  // --- Acceso directo desde el Hub: quien ya entró al Hub no vuelve a pedir su correo ---
+  // 1) El Hub (SOLO con su llave, nunca un usuario) pide un pase de un solo uso para el correo de quien aprieta «Abrir en Talks».
+  //    El correo lo pone el servidor del Hub con la sesión que ya verificó, no el navegador. Si no está en la lista del equipo, 403.
+  r.post('/v1/acceso-equipo', ruta(async (req, res) => {
+    if (!esLlaveDelHub(req)) throw new ErrorAcceso(401, 'NO_AUTENTICADO', 'Falta la llave del Hub');
+    const { email, nombre, sesionId } = z.object({
+      email: z.string().trim().email().max(200),
+      nombre: z.string().trim().max(60).optional(),
+      sesionId: z.string().regex(ID_SESION).optional(),
+    }).parse(req.body);
+    const correo = email.toLowerCase();
+    if (!correoPermitido(correo)) throw new ErrorAcceso(403, 'SIN_ACCESO', 'Ese correo no está en la lista del equipo de Talks');
+    if (sesionId && !servicio.sesionPorId(sesionId)) throw new ErrorDominio('NO_ENCONTRADO', 'Esa sesión no existe');
+    const codigo = buzonDePasesHub.emitir({ email: correo, nombre: nombre || nombreDeCorreo(correo), destino: destinoDeSesion(sesionId) });
+    res.set('cache-control', 'no-store');
+    // El pase va en la parte «#» de la dirección: esa parte no llega a ningún servidor, ni a los registros, ni al «referer».
+    res.status(201).json({ url: `${config.URL_PUBLICA}/entrar-hub#c=${codigo}`, venceEnSegundos: TTL_PASE_HUB_MS / 1000 });
+  }));
+
+  // 2) La pantalla de Talks cambia el pase por una sesión del equipo. Es pública a propósito: el pase es el secreto (256 bits, un solo uso, 60 s).
+  r.post('/equipo/canjear', ruta(async (req, res) => {
+    res.set('cache-control', 'no-store');
+    const { codigo } = z.object({ codigo: z.string().min(8).max(200) }).parse(req.body);
+    const d = buzonDePasesHub.canjear(codigo);
+    if (!d) throw new ErrorAcceso(401, 'NO_AUTENTICADO', 'Este acceso ya se usó o venció. Ábrelo otra vez desde el Hub');
+    if (!correoPermitido(d.email)) throw new ErrorAcceso(403, 'SIN_ACCESO', 'Este correo no tiene acceso');
+    const usuario = { email: d.email, nombre: d.nombre };
+    res.json({ token: firmarSesionEquipo(usuario), ...usuario, destino: d.destino, venceEn: Date.now() + TTL_SESION_EQUIPO_MS });
+  }));
 
   // --- Para el Hub (llave) y para el equipo: crear una sesión ---
   // Lo que se devuelve de una sesión creada desde fuera. NUNCA incluye la llave de Mux: solo dice si hay o no una configurada.
