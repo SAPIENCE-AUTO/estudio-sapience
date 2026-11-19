@@ -180,7 +180,7 @@ async function main() {
 
       // 7. Reglas del servidor con tokens sueltos
       const r403 = await fetch(`${WEB}/api/equipo/yo`, { headers: { authorization: `Bearer ${(() => { const t = 'tok_x_' + SIN_PERMISO; tokens.set(t, SIN_PERMISO); return t; })()}` } });
-      anotar('Una sesión válida de alguien fuera de la lista da 403', r403.status === 403, `estado ${r403.status}`);
+      anotar('Entrando directo con el correo, alguien fuera de la lista da 403 (ahí la lista sigue mandando)', r403.status === 403, `estado ${r403.status}`);
       const rBoleto = await fetch(`${WEB}/api/sesiones/inexistente/equipo/boleto`, { method: 'POST' });
       anotar('Pedir boleto sin sesión da 401', rBoleto.status === 401, `estado ${rBoleto.status}`);
 
@@ -217,7 +217,13 @@ async function main() {
       anotar('Pedir un pase con una llave equivocada da 401', (await pase({ email: DEL_EQUIPO }, 'Bearer llave-equivocada')).status === 401);
       const tokenPersona = `tok_pase_${DEL_EQUIPO}`; tokens.set(tokenPersona, DEL_EQUIPO);
       anotar('Una persona del equipo con su sesión NO puede pedirse un pase (solo el Hub con su llave)', (await pase({ email: DEL_EQUIPO }, `Bearer ${tokenPersona}`)).status === 401);
-      anotar('Un correo fuera de la lista da 403', (await pase({ email: SIN_PERMISO })).status === 403);
+      // El Hub responde por sus usuarios: Talks NO mantiene una segunda lista para quien llega con el pase (EQUIPO_PERMITIDO es solo para entrar directo con el correo)
+      const rFuera = await pase({ email: SIN_PERMISO, nombre: 'Persona nueva del Hub' });
+      anotar('Un correo que NO está en EQUIPO_PERMITIDO también recibe pase: el Hub responde por sus usuarios (201)', rFuera.status === 201, `estado ${rFuera.status}`);
+      const paseFuera = (((await rFuera.json()) as { url: string }).url.split('#c=')[1]) ?? '';
+      const jFuera = await (await canjear(paseFuera)).json() as { token: string; email: string; nombre: string };
+      const yoFuera = await fetch(`${WEB}/api/equipo/yo`, { headers: { authorization: `Bearer ${jFuera.token}` } });
+      anotar('…y esa persona entra y usa Talks (rutas del equipo y lista de sesiones)', yoFuera.status === 200 && jFuera.email === SIN_PERMISO && (await fetch(`${WEB}/api/sesiones`, { headers: { authorization: `Bearer ${jFuera.token}` } })).status === 200);
       anotar('Un correo mal escrito da 400', (await pase({ email: 'no-es-correo' })).status === 400);
       anotar('Una sesión que no existe da 404', (await pase({ email: DEL_EQUIPO, sesionId: 'no-existe' })).status === 404);
       anotar('«constructor» no existe como sesión (404), aunque sea una palabra de JavaScript', (await pase({ email: DEL_EQUIPO, sesionId: 'constructor' })).status === 404);
@@ -243,12 +249,12 @@ async function main() {
       anotar('Una sesión alterada no pasa (401)', (await fetch(`${WEB}/api/equipo/yo`, { headers: { authorization: `Bearer ${alterado}` } })).status === 401);
       anotar('Esa sesión también abre el boleto del canal en vivo', (await fetch(`${WEB}/api/sesiones/${sesionHub.id}/equipo/boleto`, { method: 'POST', headers: { authorization: `Bearer ${j1.token}` } })).status === 200);
 
-      // La lista manda siempre: una sesión BIEN FIRMADA de alguien que ya no está en EQUIPO_PERMITIDO no pasa (403)
+      // La firma es lo que vale: la lista ya no se consulta para quien llega con el pase del Hub, pero una firma ajena o alterada no pasa
       const firmaPrueba = crearFirmador(SECRETO_DE_PRUEBA);
-      const deAlguienFuera = firmaPrueba.firmar('equipo', { email: SIN_PERMISO, nombre: 'Visita' }, 3600e3);
-      anotar('Una sesión del Hub bien firmada de alguien fuera de la lista da 403', (await fetch(`${WEB}/api/equipo/yo`, { headers: { authorization: `Bearer ${deAlguienFuera}` } })).status === 403);
-      const deAlguienDentro = firmaPrueba.firmar('equipo', { email: DEL_EQUIPO, nombre: 'Marina' }, 3600e3);
-      anotar('…y la misma firma para alguien de la lista sí pasa (la prueba firma igual que el servidor)', (await fetch(`${WEB}/api/equipo/yo`, { headers: { authorization: `Bearer ${deAlguienDentro}` } })).status === 200);
+      const deAlguien = firmaPrueba.firmar('equipo', { email: SIN_PERMISO, nombre: 'Persona del Hub' }, 3600e3);
+      anotar('Una sesión del Hub bien firmada pasa aunque el correo no esté en EQUIPO_PERMITIDO (la prueba firma igual que el servidor)', (await fetch(`${WEB}/api/equipo/yo`, { headers: { authorization: `Bearer ${deAlguien}` } })).status === 200);
+      const conOtroSecreto = crearFirmador('otro-secreto-'.padEnd(48, 'z')).firmar('equipo', { email: DEL_EQUIPO, nombre: 'Marina' }, 3600e3);
+      anotar('Una sesión firmada con otro secreto NO pasa, ni siquiera de alguien de la lista (401)', (await fetch(`${WEB}/api/equipo/yo`, { headers: { authorization: `Bearer ${conOtroSecreto}` } })).status === 401);
       const vencida = crearFirmador(SECRETO_DE_PRUEBA, () => Date.now() - 2 * 3600e3).firmar('equipo', { email: DEL_EQUIPO, nombre: 'Marina' }, 3600e3);
       anotar('Una sesión del Hub vencida da 401', (await fetch(`${WEB}/api/equipo/yo`, { headers: { authorization: `Bearer ${vencida}` } })).status === 401);
       const comoPase = firmaPrueba.firmar('pase', { sid: 's1', pid: 'p1', email: DEL_EQUIPO, nombre: 'Marina' }, 3600e3);

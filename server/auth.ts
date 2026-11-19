@@ -54,10 +54,9 @@ async function usuarioDeSupabase(token: string): Promise<UsuarioSupabase | null>
   return (await r.json()) as UsuarioSupabase;
 }
 
+// EQUIPO_PERMITIDO manda solo para quien entra DIRECTO con su correo (enlace de Supabase). Quien llega desde el Hub entra con la sesión de abajo:
+// ahí responde el Hub, que solo deja entrar a las personas dadas de alta en su tabla de usuarios, así que no hay que mantener una segunda lista.
 const permitidosDelEquipo = new Set(leerLista(config.EQUIPO_PERMITIDO));
-
-/** ¿Este correo es del equipo? En modo dev no hay lista (no hay login): todos. En producción solo los de EQUIPO_PERMITIDO. */
-export const correoPermitido = (email: string): boolean => config.AUTH_MODE !== 'supabase' || permitidosDelEquipo.has(email.trim().toLowerCase());
 
 const verificarSupabase = config.AUTH_MODE === 'supabase'
   ? crearVerificadorEquipo({ obtenerUsuario: usuarioDeSupabase, permitidos: [...permitidosDelEquipo] })
@@ -83,13 +82,10 @@ export async function equipoDesdeSolicitud(req: IncomingMessage): Promise<Usuari
   if (verificarSupabase) {
     const h = req.headers.authorization ?? '';
     const token = h.startsWith('Bearer ') ? h.slice(7) : null;
-    // Primero la sesión que dio el acceso directo desde el Hub (se comprueba aquí mismo, sin red); si no es de ese tipo, es de Supabase.
+    // Primero la sesión que dio el acceso directo desde el Hub (firmada por Talks, se comprueba aquí mismo, sin red y sin lista);
+    // si no es de ese tipo, es de Supabase y ahí sí manda EQUIPO_PERMITIDO.
     const delHub = leerSesionEquipo(token);
-    if (delHub) {
-      // La lista manda siempre: quien salga de EQUIPO_PERMITIDO pierde el acceso aunque su sesión no haya vencido.
-      if (!correoPermitido(delHub.email)) throw new ErrorAcceso(403, 'SIN_ACCESO', 'Este correo no tiene acceso');
-      return delHub;
-    }
+    if (delHub) return delHub;
     return verificarSupabase(token);
   }
   const correo = (req.headers['x-equipo-email'] as string | undefined) ?? config.DEV_EQUIPO_EMAIL;

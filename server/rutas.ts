@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { config } from './config';
 import { ErrorDominio, idMiembro } from './dominio';
 import { PersonaDesconectada } from './livekit';
-import { buzonDePasesHub, correoPermitido, equipoDesdeSolicitud, ErrorAcceso, esLlaveDelHub, firmarBoleto, firmarSesionEquipo, leerGrabadora, pasePorEncabezado, type DatosPase, type UsuarioEquipo } from './auth';
+import { buzonDePasesHub, equipoDesdeSolicitud, ErrorAcceso, esLlaveDelHub, firmarBoleto, firmarSesionEquipo, leerGrabadora, pasePorEncabezado, type DatosPase, type UsuarioEquipo } from './auth';
 import { destinoDeSesion, ID_SESION, TTL_PASE_HUB_MS, TTL_SESION_EQUIPO_MS } from './accesoHub';
 import { nombreDeCorreo } from './acceso';
 import * as servicio from './servicio';
@@ -51,7 +51,8 @@ export function crearRutas(): express.Router {
 
   // --- Acceso directo desde el Hub: quien ya entró al Hub no vuelve a pedir su correo ---
   // 1) El Hub (SOLO con su llave, nunca un usuario) pide un pase de un solo uso para el correo de quien aprieta «Abrir en Talks».
-  //    El correo lo pone el servidor del Hub con la sesión que ya verificó, no el navegador. Si no está en la lista del equipo, 403.
+  //    El correo lo pone el servidor del Hub con la sesión que ya verificó, no el navegador. El Hub responde por sus usuarios
+  //    (solo entran los dados de alta en su tabla): aquí NO hay otra lista que mantener (EQUIPO_PERMITIDO es solo para entrar directo con el correo).
   r.post('/v1/acceso-equipo', ruta(async (req, res) => {
     if (!esLlaveDelHub(req)) throw new ErrorAcceso(401, 'NO_AUTENTICADO', 'Falta la llave del Hub');
     const { email, nombre, sesionId } = z.object({
@@ -60,7 +61,6 @@ export function crearRutas(): express.Router {
       sesionId: z.string().regex(ID_SESION).optional(),
     }).parse(req.body);
     const correo = email.toLowerCase();
-    if (!correoPermitido(correo)) throw new ErrorAcceso(403, 'SIN_ACCESO', 'Ese correo no está en la lista del equipo de Talks');
     if (sesionId && !servicio.sesionPorId(sesionId)) throw new ErrorDominio('NO_ENCONTRADO', 'Esa sesión no existe');
     const codigo = buzonDePasesHub.emitir({ email: correo, nombre: nombre || nombreDeCorreo(correo), destino: destinoDeSesion(sesionId) });
     res.set('cache-control', 'no-store');
@@ -74,7 +74,6 @@ export function crearRutas(): express.Router {
     const { codigo } = z.object({ codigo: z.string().min(8).max(200) }).parse(req.body);
     const d = buzonDePasesHub.canjear(codigo);
     if (!d) throw new ErrorAcceso(401, 'NO_AUTENTICADO', 'Este acceso ya se usó o venció. Ábrelo otra vez desde el Hub');
-    if (!correoPermitido(d.email)) throw new ErrorAcceso(403, 'SIN_ACCESO', 'Este correo no tiene acceso');
     const usuario = { email: d.email, nombre: d.nombre };
     res.json({ token: firmarSesionEquipo(usuario), ...usuario, destino: d.destino, venceEn: Date.now() + TTL_SESION_EQUIPO_MS });
   }));
