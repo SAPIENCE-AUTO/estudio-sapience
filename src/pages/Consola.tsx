@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Room, Track, type LocalTrack, type RemoteAudioTrack } from 'livekit-client';
+import { Room, Track, type RemoteAudioTrack } from 'livekit-client';
 import { ArrowRightLeft, BellRing, Radio, Star, Copy, DoorOpen, EyeOff, LayoutGrid, Mic, MicOff, Video as IconoVideo, VideoOff, WifiOff, X } from 'lucide-react';
 import type { AjusteDiseno, Diseno, EstadoEquipo, FondoDiseno, FormaDiseno, ParticipantePublico, TipoDiseno } from '../../compartido/tipos';
 import { tieneFoco } from '../lib/acomodo';
@@ -215,32 +215,18 @@ function SelectorDiseno({ diseno, personas, onElegir }: { diseno: Diseno; person
   );
 }
 
-/** Lo que la persona del equipo necesita para hablar con quien está en la sala verde: verse, y encender o apagar su micrófono y su cámara ahí mismo. */
-interface ControlesPropios { nombre: string; micOn: boolean; camOn: boolean; alternarMic: () => void; alternarCam: () => void; camara: LocalTrack | null }
+/** Lo que la persona del equipo necesita para hablar con quien está en la sala verde: encender o apagar su micrófono y su cámara ahí mismo (solo íconos; sin recuadro propio ni letreros, a pedido de Sergio). */
+interface ControlesPropios { micOn: boolean; camOn: boolean; alternarMic: () => void; alternarCam: () => void }
 
 function PanelVerde({ p, room, yo, ejecutar, propio }: { p: ParticipantePublico; room: Room | undefined; yo: string; ejecutar: (a: Accion, pid: string) => void; propio: ControlesPropios }) {
   useCambiosDeSala(room ?? null);
   const conmigo = p.verdeCon === yo; // los controles propios solo cuando soy yo quien habla con esta persona
   return (
     <div className="flex flex-col gap-2" data-testid={`panel-verde-${p.nombre}`}>
-      <div className="relative">
-        <Mosaico nombre={p.nombre} pista={room ? camaraDe(room, p.id) : null} className="aspect-video w-full rounded-xl">{!p.conectado && <><Velo /><SinConexion /></>}</Mosaico>
-        {/* Así te ve esta persona (como en el dibujo aprobado): tu imagen chica sobre la suya */}
-        {conmigo && <Mosaico nombre={propio.nombre} testid={`vista-propia-${p.nombre}`} esYo pista={propio.camara} espejo className="absolute bottom-2 right-2 aspect-video w-[30%] rounded-lg border-2 border-white" />}
-      </div>
+      <Mosaico nombre={p.nombre} pista={room ? camaraDe(room, p.id) : null} className="aspect-video w-full rounded-xl">{!p.conectado && <><Velo /><SinConexion /></>}</Mosaico>
       {sonidosDe(room ?? null).map((t) => <AudioRemoto key={t.sid} pista={t} />)}
       {conmigo && (
         <div className="flex flex-col gap-1.5" data-testid={`controles-verde-${p.nombre}`}>
-          {!propio.micOn && (
-            <p role="status" data-testid={`aviso-mic-apagado-${p.nombre}`} className="inline-flex items-center gap-1.5 rounded-lg bg-peligro-fondo px-2.5 py-1.5 text-[12px] font-semibold text-peligro">
-              <MicOff size={14} aria-hidden="true" className="shrink-0" />Tu micrófono está apagado: {p.nombre} no te oye
-            </p>
-          )}
-          {!propio.camOn && (
-            <p role="status" data-testid={`aviso-cam-apagada-${p.nombre}`} className="inline-flex items-center gap-1.5 rounded-lg bg-teal-claro px-2.5 py-1.5 text-[12px] font-semibold text-teal">
-              <VideoOff size={14} aria-hidden="true" className="shrink-0" />Tu cámara está apagada: {p.nombre} no te ve
-            </p>
-          )}
           <div className="flex items-center gap-2" data-testid={`iconos-verde-${p.nombre}`}>
             <BotonControl compacto data-testid={`verde-mic-${p.nombre}`} activo={propio.micOn} onClick={propio.alternarMic}
               encendido={{ icono: <Mic size={20} aria-hidden="true" />, texto: 'Silenciar mi micrófono' }} apagado={{ icono: <MicOff size={20} aria-hidden="true" />, texto: 'Activar mi micrófono' }} />
@@ -501,7 +487,7 @@ export default function Consola() {
               <Tarjeta titulo="Sala verde" cuenta={enVerde.length} aviso={enVerde.length > 0 ? <Indicador tono="sala" icono={DoorOpen}>Adentro</Indicador> : undefined}>
                 <div className="flex flex-col gap-4" data-testid="lista-verde">
                   {enVerde.length === 0 && <p className="text-[13px] text-tenue">Nadie en la sala verde</p>}
-                  {enVerde.map((p) => <PanelVerde key={p.id} p={p} room={salaSesion ?? undefined} yo={yo} ejecutar={ejecutar} propio={{ nombre: miembro?.nombre ?? 'Tú', micOn, camOn, alternarMic: () => setMicOn(!micOn), alternarCam: () => setCamOn(!camOn), camara: miCamara }} />)}
+                  {enVerde.map((p) => <PanelVerde key={p.id} p={p} room={salaSesion ?? undefined} yo={yo} ejecutar={ejecutar} propio={{ micOn, camOn, alternarMic: () => setMicOn(!micOn), alternarCam: () => setCamOn(!camOn) }} />)}
                   {enVerde.some((p) => p.verdeCon !== yo) && <p className="text-[12px] text-tenue">{`Con ${nombreEquipo(enVerde.find((p) => p.verdeCon !== yo)?.verdeCon ?? null)}`}</p>}
                 </div>
               </Tarjeta>
