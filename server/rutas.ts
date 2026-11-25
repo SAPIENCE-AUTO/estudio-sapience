@@ -8,7 +8,7 @@ import { destinoDeSesion, ID_SESION, TTL_PASE_HUB_MS, TTL_SESION_EQUIPO_MS } fro
 import { nombreDeCorreo } from './acceso';
 import * as servicio from './servicio';
 import type { Sesion } from './dominio';
-import { AJUSTES_DISENO, FONDOS_DISENO, FORMAS_DISENO, TIPOS_DISENO } from '../compartido/tipos';
+import { AJUSTES_DISENO, FONDOS_DISENO, FORMAS_DISENO, MODOS_PANTALLA, TIPOS_DISENO } from '../compartido/tipos';
 
 type ConEquipo = Request & { equipo?: UsuarioEquipo };
 type ConPase = Request & { pase?: DatosPase };
@@ -148,6 +148,20 @@ export function crearRutas(): express.Router {
     if (!servicio.sesionPorId(sid)) throw new ErrorDominio('NO_ENCONTRADO', 'Esa sesión no existe');
     const u = req.equipo!;
     res.json({ boleto: firmarBoleto({ sid, email: u.email, nombre: u.nombre }) });
+  }));
+
+  // Pantalla compartida del equipo: empezar (nace en backstage), subirla al escenario o regresarla, y dejar de compartir. Una a la vez.
+  r.post('/sesiones/:sid/pantalla', exigirEquipo, ruta(async (req: ConEquipo, res) => {
+    const sid = req.params.sid as string;
+    const eq = idMiembro(req.equipo!.email);
+    const cuerpo = z.discriminatedUnion('accion', [
+      z.object({ accion: z.literal('empezar'), modo: z.enum(MODOS_PANTALLA as [string, ...string[]]), audio: z.boolean() }),
+      z.object({ accion: z.literal('detener') }),
+      z.object({ accion: z.literal('escenario'), enEscenario: z.boolean() }),
+    ]).parse(req.body);
+    if (cuerpo.accion === 'empezar') return res.json(await servicio.empezarPantalla(sid, eq, cuerpo.modo as 'presentacion' | 'video', cuerpo.audio));
+    if (cuerpo.accion === 'detener') return res.json(await servicio.detenerPantalla(sid, eq));
+    return res.json(await servicio.pantallaEnEscenario(sid, eq, cuerpo.enEscenario));
   }));
 
   r.post('/sesiones/:sid/equipo/escenario', exigirEquipo, ruta(async (req: ConEquipo, res) => {

@@ -1,10 +1,14 @@
 // Lo que cada quien puede ver de la sesión. El participante NUNCA recibe la lista completa:
 // solo lo suyo, el equipo y quién está en el escenario (porque eso lo ve todo el mundo de todos modos).
-import { normalizarChat, normalizarDiseno, type EnVivo, type EstadoEquipo, type EstadoGrabadora, type EstadoParticipante, type MensajePublico } from '../compartido/tipos';
+import { normalizarChat, normalizarDiseno, type EnVivo, type EstadoEquipo, type EstadoGrabadora, type EstadoParticipante, type MensajePublico, type PantallaEquipo, type PantallaPublica } from '../compartido/tipos';
 import type { Mensaje, Sesion } from './dominio';
 
 /** Solo «desde cuándo»: el identificador interno de la transmisión no sale del servidor. */
 const enVivoPublico = (s: Sesion): EnVivo | null => (s.envivo ? { desde: s.envivo.desde } : null);
+
+/** Fuera del equipo la pantalla solo existe cuando ya está en el escenario (en backstage ni se sabe que alguien comparte). */
+const pantallaPublica = (s: Sesion): PantallaPublica | null => (s.pantalla?.enEscenario ? { de: s.pantalla.de, nombre: s.pantalla.nombre, audio: s.pantalla.audio } : null);
+const pantallaDelEquipo = (s: Sesion): PantallaEquipo | null => (s.pantalla ? { de: s.pantalla.de, nombre: s.pantalla.nombre, audio: s.pantalla.audio, modo: s.pantalla.modo, enEscenario: s.pantalla.enEscenario, desde: s.pantalla.desde } : null);
 
 const publico = (m: Mensaje, para: string): MensajePublico => ({ id: m.id, canal: m.canal, deId: m.deId, deNombre: m.deNombre, deRol: m.deRol, para, texto: m.texto, en: m.en });
 
@@ -44,6 +48,7 @@ export function estadoParaEquipo(s: Sesion, yo: string): EstadoEquipo {
     chat: normalizarChat(s.chat),
     mensajes: (s.mensajes ?? []).map((m) => publico(m, m.para)),
     envivo: enVivoPublico(s),
+    pantalla: pantallaDelEquipo(s),
     highlights: (s.highlights ?? []).map((h) => ({ id: h.id, en: h.en, vivoDesde: h.vivoDesde, titulo: h.titulo, porNombre: h.porNombre })),
     transmision: s.muxLlave ? 'lista' : 'sin-llave',
   };
@@ -62,6 +67,8 @@ export function estadoParaParticipante(s: Sesion, pid: string): EstadoParticipan
     chat: normalizarChat(s.chat),
     mensajes: mensajesParaParticipante(s, pid),
     envivo: enVivoPublico(s),
+    // Solo quien está adentro (backstage o escenario) ve el escenario; en el lobby y en la sala verde no.
+    pantalla: p.lugar === 'backstage' || p.lugar === 'escenario' ? pantallaPublica(s) : null,
   };
 }
 
@@ -72,5 +79,5 @@ export function estadoParaParticipante(s: Sesion, pid: string): EstadoParticipan
 export function estadoParaGrabadora(s: Sesion): EstadoGrabadora {
   const equipo = Object.values(s.equipo).filter((m) => m.enEscenario).map((m) => ({ id: m.id, nombre: m.nombre }));
   const gente = Object.values(s.participantes).filter((p) => p.lugar === 'escenario').sort((a, b) => a.entroEn - b.entroEn).map((p) => ({ id: p.id, nombre: p.nombre }));
-  return { tipo: 'estado', rol: 'grabadora', v: s.version, diseno: normalizarDiseno(s.diseno), escena: [...equipo, ...gente] };
+  return { tipo: 'estado', rol: 'grabadora', v: s.version, diseno: normalizarDiseno(s.diseno), escena: [...equipo, ...gente], pantalla: pantallaPublica(s) };
 }

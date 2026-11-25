@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { ConnectionState, Room, RoomEvent, Track, type RemoteAudioTrack } from 'livekit-client';
 import { LogOut, Mic, MicOff, Video as IconoVideo, VideoOff } from 'lucide-react';
-import type { EstadoParticipante, Lugar, RespuestaEntrar } from '../../compartido/tipos';
+import { ID_PANTALLA, type EstadoParticipante, type Lugar, type RespuestaEntrar } from '../../compartido/tipos';
+import { disenoConPantalla } from '../lib/acomodo';
 import { api, ErrorApi } from '../lib/api';
 import { useCanal } from '../lib/canal';
-import { camaraDe, esperarPermisoDePublicar, permitidosDeParticipante, proteger, useCambiosDeSala } from '../lib/sala';
+import { camaraDe, esperarPermisoDePublicar, pantallaDe, permitidosDeParticipante, pistasDeSonido, proteger, useCambiosDeSala } from '../lib/sala';
 import { listarDispositivos, pedirPermiso, useNivelMicrofono, useVistaPrevia, type Dispositivos, type PermisoMedios } from '../lib/medios';
 import { Mosaico } from '../components/Mosaico';
 import { esTactil, opcionesDeCamara, type LimitesPropios } from '../lib/imagen';
@@ -298,7 +299,7 @@ function Dentro({ entrada, camId, micId, onSalir }: { entrada: RespuestaEntrar; 
   const enPantalla = [...equipoEnEscenario.map((m) => ({ id: m.id, nombre: m.nombre })), ...estado.escenario];
   const otrosEnPantalla = enPantalla.filter((p) => p.id !== yo.id);
   const conQuien = estado.equipo.find((m) => m.id === yo.verdeCon);
-  const sonidos = room ? [...room.remoteParticipants.values()].map((p) => p.getTrackPublication(Track.Source.Microphone)?.track).filter(Boolean) as RemoteAudioTrack[] : [];
+  const sonidos = pistasDeSonido(room); // micrófonos y, si la hay en el escenario, el sonido de la pantalla compartida
 
   const chip = (
     <span data-testid="chip-lugar" className={`rounded-md px-2.5 py-1 text-xs font-semibold ${lugar === 'escenario' ? 'bg-teal text-white' : 'bg-teal-claro text-teal'}`}>{etiquetaLugar[yo.lugar]}</span>
@@ -362,13 +363,13 @@ function Dentro({ entrada, camId, micId, onSalir }: { entrada: RespuestaEntrar; 
       {(yo.lugar === 'backstage' || yo.lugar === 'escenario') && (
         <div className="flex flex-col gap-4 pb-6">
           <div className="px-3 md:px-5">
-            <Lienzo data-testid="escenario" vacio="Todavía no hay nadie en pantalla" diseno={estado.diseno}
-              items={enPantalla.map((p) => ({
+            <Lienzo data-testid="escenario" vacio="Todavía no hay nadie en pantalla" diseno={disenoConPantalla(estado.diseno, !!estado.pantalla)}
+              items={[...(estado.pantalla ? [{ id: ID_PANTALLA, nodo: <Mosaico nombre="Pantalla" etiqueta={estado.pantalla.nombre} pantalla pista={pantallaDe(room, estado.pantalla.de)} className="h-full w-full" /> }] : []), ...enPantalla.map((p) => ({
                 id: p.id,
                 nodo: p.id === yo.id
                   ? <Mosaico nombre={yo.nombre} esYo pista={camaraLocal} flujo={camaraLocal ? null : vistaPrevia} espejo className="h-full w-full" />
                   : <Mosaico nombre={p.nombre} pista={camaraDe(room, p.id)} className="h-full w-full" />,
-              }))} />
+              }))]} />
           </div>
           <div className="flex flex-col gap-1 px-5">
             <h1 className="text-lg font-semibold">{yo.lugar === 'escenario' ? 'Estás en pantalla' : 'Estás en espera'}</h1>

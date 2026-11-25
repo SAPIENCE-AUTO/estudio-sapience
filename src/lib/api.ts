@@ -1,4 +1,4 @@
-import type { RespuestaAccion, RespuestaCanje, RespuestaEntrar, RespuestaTokenEquipo, CanalChat, ConfigChat, Diseno } from '../../compartido/tipos';
+import type { RespuestaAccion, RespuestaCanje, RespuestaEntrar, RespuestaTokenEquipo, CanalChat, ConfigChat, Diseno, ModoPantalla } from '../../compartido/tipos';
 import { tokenDeEquipo } from './acceso';
 
 export class ErrorApi extends Error {
@@ -64,6 +64,9 @@ export const api = {
   infoLink: (codigo: string) => pedir<{ nombre: string }>(`/p/${codigo}`),
   entrar: (codigo: string, nombre: string) => pedir<RespuestaEntrar>(`/p/${codigo}/entrar`, { cuerpo: { nombre, aceptoAviso: true } }),
   livekitActual: (pase: string) => pedir<RespuestaEntrar['livekit']>('/yo/livekit', { pase }),
+  /** Pantalla compartida del equipo: empezar (nace en backstage), subirla al escenario o regresarla, o dejar de compartir. */
+  pantalla: (sid: string, cuerpo: { accion: 'empezar'; modo: ModoPantalla; audio: boolean } | { accion: 'detener' } | { accion: 'escenario'; enEscenario: boolean }) =>
+    pedir<RespuestaAccion>(`/sesiones/${sid}/pantalla`, { equipo: true, cuerpo }),
   /** El participante se retira por su cuenta: el servidor lo regresa al lobby al instante (no espera el plazo de desconexión) y la pantalla se desconecta. */
   salirParticipante: (pase: string) => pedir<RespuestaAccion>('/yo/salir', { pase }),
 };

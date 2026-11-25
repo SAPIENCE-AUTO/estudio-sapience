@@ -7,6 +7,7 @@ export function mediosFalsos(ancho = 640, alto = 360): string {
   window.__TRAZA = true;
   window.__pedidos = []; // lo que la página le pidió a la cámara (para revisar que en celular no se fuerza una forma)
   window.__flujos = []; // los flujos que abrió (para revisar cuáles siguen vivos)
+  window.__pantallaPedida = null; // lo que la página le pidió al selector de pantalla compartida
   let contexto = null;
   const crearFlujo = (video, audio) => {
     const flujo = new MediaStream();
@@ -28,6 +29,23 @@ export function mediosFalsos(ancho = 640, alto = 360): string {
   };
   // __retardoCamara (ms) simula una cámara real que tarda en arrancar en frío
   navigator.mediaDevices.getUserMedia = async (c) => { if (c && c.video) window.__pedidos.push(JSON.stringify(c.video)); if (c && c.video && window.__retardoCamara) await new Promise((r) => setTimeout(r, window.__retardoCamara)); return crearFlujo(!!(c && c.video), !!(c && c.audio)); };
+  // Pantalla compartida de mentira: un fondo naranja con un cuadro que se mueve (se distingue de la cámara verde) y, si se pide sonido, un tono.
+  // window.__sinSonidoPantalla = true simula a quien comparte una ventana (sin sonido) o no marca «Compartir audio».
+  navigator.mediaDevices.getDisplayMedia = async (c) => {
+    window.__pantallaPedida = JSON.stringify(c || {});
+    const flujo = new MediaStream();
+    const cv = document.createElement('canvas'); cv.width = 1280; cv.height = 720;
+    const x = cv.getContext('2d'); let n = 0;
+    setInterval(() => { x.fillStyle = '#c2410c'; x.fillRect(0, 0, 1280, 720); x.fillStyle = '#ffffff'; x.fillRect((n * 12) % 1200, 300, 80, 80); n++; }, 66);
+    cv.captureStream(15).getVideoTracks().forEach((t) => flujo.addTrack(t));
+    if (c && c.audio && !window.__sinSonidoPantalla) {
+      contexto = contexto || new AudioContext();
+      const osc = contexto.createOscillator(); osc.frequency.value = 660; const g = contexto.createGain(); g.gain.value = 0.02;
+      const d = contexto.createMediaStreamDestination(); osc.connect(g); g.connect(d); osc.start();
+      d.stream.getAudioTracks().forEach((t) => flujo.addTrack(t));
+    }
+    return flujo;
+  };
   navigator.mediaDevices.enumerateDevices = async () => [
     { deviceId: 'cam-de-prueba', kind: 'videoinput', label: 'Cámara de prueba', groupId: 'g1' },
     { deviceId: 'mic-de-prueba', kind: 'audioinput', label: 'Micrófono de prueba', groupId: 'g1' },

@@ -63,6 +63,19 @@ export const MAX_TITULO_HIGHLIGHT = 120;
 /** La sesión se está transmitiendo (y Mux la graba). Lo ve el equipo y también los participantes: tienen derecho a saberlo. */
 export interface EnVivo { desde: number }
 
+/**
+ * Pantalla compartida por alguien del equipo (presentaciones, PDFs, videos con sonido…). Solo UNA a la vez. Empieza en backstage (solo la ve el equipo,
+ * opaca) y el equipo decide subirla al escenario, igual que a una persona. En el escenario la ven y la oyen todos, también la transmisión EN VIVO.
+ * - presentacion: nítida (texto y diapositivas). video: más fluida (movimiento) y con sonido si el navegador lo permite.
+ */
+export type ModoPantalla = 'presentacion' | 'video';
+export const MODOS_PANTALLA: readonly ModoPantalla[] = ['presentacion', 'video'];
+/** Identificador de la pantalla dentro del escenario (junto a los de las personas). */
+export const ID_PANTALLA = 'pantalla';
+/** Lo que se sabe de la pantalla fuera del equipo: quién la comparte y si trae sonido. Solo cuando ya está en el escenario. */
+export interface PantallaPublica { de: string; nombre: string; audio: boolean }
+export interface PantallaEquipo extends PantallaPublica { modo: ModoPantalla; enEscenario: boolean; desde: number }
+
 /** Dónde está una persona. El orden de las salas es: lobby → sala verde → sesión (backstage o escenario). */
 export type Lugar = 'lobby' | 'verde' | 'backstage' | 'escenario';
 
@@ -100,6 +113,8 @@ export interface EstadoEquipo {
   mensajes: MensajePublico[];
   envivo: EnVivo | null;
   highlights: HighlightPublico[];
+  /** La pantalla que comparte alguien del equipo (en backstage o en el escenario), o null. */
+  pantalla: PantallaEquipo | null;
   /** «lista»: hay una llave de Mux para transmitir. «sin-llave»: falta (el Hub la manda al crear la sesión). La llave NUNCA viaja. */
   transmision: 'lista' | 'sin-llave';
 }
@@ -116,6 +131,8 @@ export interface EstadoParticipante {
   diseno: Diseno;
   chat: ConfigChat;
   envivo: EnVivo | null;
+  /** La pantalla compartida, solo cuando ya está en el escenario y quien pregunta está adentro (backstage o escenario). */
+  pantalla: PantallaPublica | null;
   /** Solo lo que este participante puede leer: lo suyo y lo que el equipo le escribió a él o a todos. NUNCA el chat del equipo. */
   mensajes: MensajePublico[];
 }
@@ -130,6 +147,8 @@ export interface EstadoGrabadora {
   v: number;
   diseno: Diseno;
   escena: { id: string; nombre: string }[];
+  /** La pantalla compartida, solo si está en el escenario. */
+  pantalla: PantallaPublica | null;
 }
 
 export type Estado = EstadoEquipo | EstadoParticipante | EstadoGrabadora;

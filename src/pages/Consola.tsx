@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Room, Track, type RemoteAudioTrack } from 'livekit-client';
-import { ArrowRightLeft, BellRing, Radio, Star, Copy, DoorOpen, EyeOff, LayoutGrid, Mic, MicOff, Video as IconoVideo, VideoOff, WifiOff, X } from 'lucide-react';
-import type { AjusteDiseno, Diseno, EstadoEquipo, FondoDiseno, FormaDiseno, ParticipantePublico, TipoDiseno } from '../../compartido/tipos';
-import { tieneFoco } from '../lib/acomodo';
-import { api } from '../lib/api';
+import { Room, RoomEvent, ScreenSharePresets, Track, type RemoteAudioTrack } from 'livekit-client';
+import { ArrowRightLeft, BellRing, Radio, Star, Copy, DoorOpen, EyeOff, LayoutGrid, Mic, MicOff, MonitorOff, MonitorUp, Video as IconoVideo, VideoOff, WifiOff, X } from 'lucide-react';
+import { ID_PANTALLA, type AjusteDiseno, type Diseno, type EstadoEquipo, type FondoDiseno, type FormaDiseno, type ModoPantalla, type ParticipantePublico, type TipoDiseno } from '../../compartido/tipos';
+import { disenoConPantalla, tieneFoco } from '../lib/acomodo';
+import { api, ErrorApi } from '../lib/api';
 import { useConsola, type Accion } from '../lib/useConsola';
-import { camaraDe, proteger, useCambiosDeSala } from '../lib/sala';
+import { camaraDe, pantallaDe, proteger, useCambiosDeSala, type Permitidos } from '../lib/sala';
 import { Mosaico } from '../components/Mosaico';
 import { Lienzo, type Viñeta } from '../components/Lienzo';
 import { ChatConsola } from '../components/Chat';
@@ -28,6 +28,7 @@ function useSalaSesion(sid: string, listo: boolean): Room | null {
         const t = await api.tokenEquipo(sid);
         if (cancelado) return;
         await r.connect(t.url, t.token, { autoSubscribe: true });
+        if (window.__TRAZA) (window as unknown as { __sala?: Room }).__sala = r; // solo en las pruebas: deja la sala a la vista
         if (!cancelado) setRoom(r);
       } catch { /* la consola vuelve a intentar al recargar */ }
     })();
@@ -38,6 +39,10 @@ function useSalaSesion(sid: string, listo: boolean): Room | null {
 
 function sonidosDe(room: Room | null): RemoteAudioTrack[] {
   return room ? ([...room.remoteParticipants.values()].map((p) => p.getTrackPublication(Track.Source.Microphone)?.track).filter(Boolean) as RemoteAudioTrack[]) : [];
+}
+/** El sonido de la pantalla que comparte otra persona del equipo (se oye aquí también, para revisarlo en backstage antes de subirla). */
+function sonidosDePantalla(room: Room | null): RemoteAudioTrack[] {
+  return room ? ([...room.remoteParticipants.values()].map((p) => p.getTrackPublication(Track.Source.ScreenShareAudio)?.track).filter(Boolean) as RemoteAudioTrack[]) : [];
 }
 
 const minutos = (desde: number, ahora: number) => Math.max(0, Math.floor((ahora - desde) / 60000));
@@ -320,13 +325,25 @@ export default function Consola() {
   // El equipo publica solo cuando hace falta: en el escenario (lo recibe cualquiera) o hablando con alguien en la sala verde (solo esa persona
   // y el resto del equipo). Siempre se protegen las pistas ANTES de publicar. Se usa el estado del servidor, no el parche optimista.
   const enVerdeConmigo = (estado?.participantes ?? []).filter((p) => p.lugar === 'verde' && p.verdeCon === yo).map((p) => p.id).sort().join(',');
+  // Pantalla compartida: la comparte una persona del equipo, nace en backstage y el equipo decide subirla al escenario.
+  const pantalla = estado?.pantalla ?? null;
+  const compartoYo = !!pantalla && pantalla.de === yo;
+  const pantallaEnEscenario = !!pantalla?.enEscenario;
+  const protegidoRef = useRef<{ camara: Permitidos; equipo: string[] }>({ camara: [], equipo: [] });
+  const compartoYoRef = useRef(false);
+  compartoYoRef.current = compartoYo;
+  const iniciandoPantalla = useRef(false);
+  const [eligiendoPantalla, setEligiendoPantalla] = useState(false);
   useEffect(() => {
     if (!salaSesion || !salaSesionLista) return;
     let cancelado = false;
     const otrosDelEquipo = (equipoIds ? equipoIds.split(',') : []).filter((id) => id !== yo);
     const deVerde = enVerdeConmigo ? enVerdeConmigo.split(',') : [];
     void (async () => {
-      proteger(salaSesion, enEscenario ? 'todos' : [...otrosDelEquipo, ...deVerde]);
+      const camara: Permitidos = enEscenario ? 'todos' : [...otrosDelEquipo, ...deVerde];
+      protegidoRef.current = { camara, equipo: otrosDelEquipo };
+      // La pantalla que yo comparto va aparte: solo el equipo la recibe mientras está en backstage, y todos cuando se sube al escenario.
+      proteger(salaSesion, camara, compartoYo ? (pantallaEnEscenario ? 'todos' : otrosDelEquipo) : camara);
       if (!enEscenario && deVerde.length === 0) {
         await salaSesion.localParticipant.setCameraEnabled(false).catch(() => undefined);
         await salaSesion.localParticipant.setMicrophoneEnabled(false).catch(() => undefined);
@@ -337,7 +354,31 @@ export default function Consola() {
       await salaSesion.localParticipant.setCameraEnabled(camOn).catch(() => undefined);
     })();
     return () => { cancelado = true; };
-  }, [salaSesion, salaSesionLista, enEscenario, equipoIds, enVerdeConmigo, yo, micOn, camOn]);
+  }, [salaSesion, salaSesionLista, enEscenario, equipoIds, enVerdeConmigo, yo, micOn, camOn, compartoYo, pantallaEnEscenario]);
+
+  // Si dejo de compartir desde el aviso del navegador («Dejar de compartir»), LiveKit quita la pista y aquí se avisa al servidor.
+  // Solo si el servidor dice que yo compartía: si no, no se debe tocar la pantalla de otra persona.
+  useEffect(() => {
+    if (!salaSesion) return;
+    const alQuitar = (pub: { source: Track.Source }) => {
+      if (pub.source === Track.Source.ScreenShare && compartoYoRef.current) void api.pantalla(sid, { accion: 'detener' }).catch(() => undefined);
+    };
+    salaSesion.on(RoomEvent.LocalTrackUnpublished, alQuitar as never);
+    return () => { salaSesion.off(RoomEvent.LocalTrackUnpublished, alQuitar as never); };
+  }, [salaSesion, sid]);
+  // Si el servidor dice que comparto pero ya no tengo la pista (recargué la página, se cayó la conexión), se limpia: no queda una pantalla fantasma.
+  useEffect(() => {
+    if (!compartoYo || !salaSesionLista) return;
+    const t = setTimeout(() => {
+      if (!iniciandoPantalla.current && !salaSesion?.localParticipant.getTrackPublication(Track.Source.ScreenShare)) void api.pantalla(sid, { accion: 'detener' }).catch(() => undefined);
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [compartoYo, salaSesionLista, salaSesion, sid]);
+  // Si otra persona del equipo corta mi pantalla, dejo de capturarla.
+  useEffect(() => {
+    if (compartoYo || iniciandoPantalla.current || !salaSesionLista) return;
+    if (salaSesion?.localParticipant.getTrackPublication(Track.Source.ScreenShare)) void salaSesion.localParticipant.setScreenShareEnabled(false).catch(() => undefined);
+  }, [compartoYo, salaSesionLista, salaSesion]);
 
   // Fuera del escenario y sin hablar con nadie en la sala verde no se publica nada, pero la persona del equipo se sigue viendo (opaca) en backstage.
   // La cámara se mantiene ABIERTA mientras esté encendida (antes se cerraba al empezar a transmitir y LiveKit la arrancaba de cero: ese rato era
@@ -359,8 +400,47 @@ export default function Consola() {
   const miCamara = pubCamara && !pubCamara.isMuted ? pubCamara.track ?? null : null;
   const alternarEscenario = () => void api.miembroEnEscenario(sid, !enEscenario).catch(() => setAviso('No se pudo cambiar'));
 
+  // ───── Pantalla compartida ─────
+  const empezarAPantalla = async (modo: ModoPantalla) => {
+    setEligiendoPantalla(false);
+    const sala = salaSesion;
+    if (!sala || !salaSesionLista) { setAviso('Todavía no hay conexión con la sala. Intenta en un momento'); return; }
+    const video = modo === 'video';
+    const preset = video ? ScreenSharePresets.h1080fps30 : ScreenSharePresets.h1080fps15; // video: más fluido; presentación: más nítido
+    iniciandoPantalla.current = true;
+    try {
+      // ANTES de publicar se protege: la pantalla solo la recibe el equipo hasta que se suba al escenario.
+      proteger(sala, protegidoRef.current.camara, protegidoRef.current.equipo);
+      await sala.localParticipant.setScreenShareEnabled(true, {
+        audio: video, contentHint: video ? 'motion' : 'detail', resolution: preset.resolution,
+        selfBrowserSurface: 'exclude', surfaceSwitching: 'include', systemAudio: 'include',
+      }, { screenShareEncoding: preset.encoding });
+      const conSonido = !!sala.localParticipant.getTrackPublication(Track.Source.ScreenShareAudio);
+      await api.pantalla(sid, { accion: 'empezar', modo, audio: conSonido });
+      if (video && !conSonido) setAviso('Se comparte sin sonido. Para compartir el sonido elige una pestaña de Chrome y marca «Compartir audio de la pestaña»');
+    } catch (e) {
+      await sala.localParticipant.setScreenShareEnabled(false).catch(() => undefined);
+      const cancelo = e instanceof DOMException && (e.name === 'NotAllowedError' || e.name === 'AbortError'); // eligió «Cancelar» en el selector del navegador
+      if (!cancelo) setAviso(e instanceof ErrorApi ? e.message : 'No se pudo compartir la pantalla');
+    } finally { iniciandoPantalla.current = false; }
+  };
+  const dejarDePantalla = async () => {
+    if (compartoYo) await salaSesion?.localParticipant.setScreenShareEnabled(false).catch(() => undefined);
+    await api.pantalla(sid, { accion: 'detener' }).catch(() => setAviso('No se pudo dejar de compartir'));
+  };
+  const pantallaAlEscenario = (en: boolean) => void api.pantalla(sid, { accion: 'escenario', enEscenario: en }).catch(() => setAviso('No se pudo cambiar la pantalla'));
+  const miPantalla = (quien: string) => pantallaDe(salaSesion, quien);
+
   // Quién va en el escenario: el equipo y los participantes que subieron. El acomodo cambia solo según cuántos son.
   const enEscena: Viñeta[] = [
+    ...(pantalla?.enEscenario ? [{
+      id: ID_PANTALLA,
+      nodo: (
+        <Mosaico nombre="Pantalla" etiqueta={pantalla.nombre} pantalla pista={miPantalla(pantalla.de)} className="h-full w-full">
+          <ClicParaMover data-testid="bajar-pantalla" texto="Clic para bajar a backstage" onClick={() => pantallaAlEscenario(false)} />
+        </Mosaico>
+      ),
+    }] : []),
     ...estado.equipo.filter((m) => m.enEscenario).map((m) => ({
       id: m.id,
       nodo: (
@@ -416,27 +496,60 @@ export default function Consola() {
       </header>
 
       {sonidosDe(salaSesion).map((t) => <AudioRemoto key={t.sid} pista={t} />)}
+      {sonidosDePantalla(salaSesion).map((t) => <AudioRemoto key={t.sid} pista={t} />)}
 
       <main className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
         <div className="grid shrink-0 grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
           <section className="flex min-w-0 flex-col gap-3">
             <div className="mx-auto flex w-full flex-col gap-3" style={{ maxWidth: 'calc((100vh - 400px) * 16 / 9)', minWidth: 360 }} data-testid="columna-escenario">
-              <Lienzo data-testid="lista-escenario" items={enEscena} diseno={estado.diseno} vacio="Nadie en el escenario" />
+              <Lienzo data-testid="lista-escenario" items={enEscena} diseno={disenoConPantalla(estado.diseno, !!pantalla?.enEscenario)} vacio="Nadie en el escenario" />
             <div className="flex flex-wrap items-center justify-center gap-2" data-testid="controles">
               <BotonControl data-testid="boton-mic" activo={micOn} encendido={{ icono: <Mic size={22} aria-hidden="true" />, texto: 'Silenciar mi micrófono' }} apagado={{ icono: <MicOff size={22} aria-hidden="true" />, texto: 'Activar mi micrófono' }} onClick={() => setMicOn(!micOn)} />
               <BotonControl data-testid="boton-cam" activo={camOn} encendido={{ icono: <IconoVideo size={22} aria-hidden="true" />, texto: 'Apagar mi cámara' }} apagado={{ icono: <VideoOff size={22} aria-hidden="true" />, texto: 'Encender mi cámara' }} onClick={() => setCamOn(!camOn)} />
-              <SelectorDiseno diseno={estado.diseno} personas={enEscena.map((v) => ({ id: v.id, nombre: estado.equipo.find((m) => m.id === v.id)?.nombre ?? participantes.find((p) => p.id === v.id)?.nombre ?? '' }))}
+              <SelectorDiseno diseno={estado.diseno} personas={enEscena.map((v) => ({ id: v.id, nombre: v.id === ID_PANTALLA ? 'Pantalla' : estado.equipo.find((m) => m.id === v.id)?.nombre ?? participantes.find((p) => p.id === v.id)?.nombre ?? '' }))}
                 onElegir={elegirDiseno} />
               <button data-testid="boton-highlight" onClick={marcarMomento} title="Marcar este momento (tecla H)"
                 className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg bg-oro px-3 text-[13px] font-semibold text-oro-texto"><Star size={14} aria-hidden="true" />Highlight</button>
+              <button data-testid="boton-pantalla" aria-pressed={!!pantalla} onClick={() => (pantalla ? void dejarDePantalla() : setEligiendoPantalla(!eligiendoPantalla))}
+                title={pantalla ? (compartoYo ? 'Dejar de compartir tu pantalla' : `Dejar de mostrar la pantalla de ${pantalla.nombre}`) : 'Compartir una presentación, un documento o un video'}
+                className={`inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-[13px] font-semibold ${pantalla ? 'bg-peligro-fondo text-peligro' : 'bg-gris-boton text-teal'}`}>
+                {pantalla ? <MonitorOff size={14} aria-hidden="true" /> : <MonitorUp size={14} aria-hidden="true" />}
+                {pantalla ? (compartoYo ? 'Dejar de compartir' : `Quitar la pantalla de ${pantalla.nombre}`) : 'Compartir pantalla'}
+              </button>
               <Boton data-testid="mi-escenario" onClick={alternarEscenario}>
                 <span className="inline-flex items-center gap-1.5"><ArrowRightLeft size={14} aria-hidden="true" />{enEscenario ? 'Ir a backstage' : 'Subirme al escenario'}</span>
               </Boton>
             </div>
+            {eligiendoPantalla && !pantalla && (
+              <div data-testid="elegir-pantalla" className="flex flex-col gap-2 rounded-2xl border border-borde bg-tarjeta p-3">
+                <p className="text-[13px] font-semibold">¿Qué vas a compartir?</p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button data-testid="pantalla-presentacion" onClick={() => void empezarAPantalla('presentacion')} className="flex flex-col items-start gap-0.5 rounded-xl bg-gris-boton p-3 text-left">
+                    <span className="text-[13px] font-semibold text-teal">Una presentación o un documento</span>
+                    <span className="text-[12px] text-tenue">Nítido para texto y diapositivas. Sin sonido.</span>
+                  </button>
+                  <button data-testid="pantalla-video" onClick={() => void empezarAPantalla('video')} className="flex flex-col items-start gap-0.5 rounded-xl bg-gris-boton p-3 text-left">
+                    <span className="text-[13px] font-semibold text-teal">Un video con sonido</span>
+                    <span className="text-[12px] text-tenue">Más fluido. Para el sonido, elige una pestaña de Chrome y marca «Compartir audio de la pestaña».</span>
+                  </button>
+                </div>
+                <p className="text-[12px] text-tenue">Comparte una pestaña o una ventana, no toda la pantalla: así no se ve nada más por accidente. Empieza en backstage y tú decides cuándo subirla al escenario.</p>
+                <button data-testid="cancelar-pantalla" onClick={() => setEligiendoPantalla(false)} className="self-start text-[12px] font-semibold text-tenue underline underline-offset-2">Cancelar</button>
+              </div>
+            )}
           <Tarjeta className="shrink-0" data-testid="backstage" titulo="Backstage: solo lo ve el equipo" cuenta={enBackstage.length} icono={<EyeOff size={14} aria-hidden="true" />}>
             <div className="flex flex-wrap items-start gap-3">
               <div className="flex flex-wrap items-start gap-3" data-testid="lista-backstage">
-                {!enBackstage.length && <p className="text-[13px] text-tenue">Nadie en backstage</p>}
+                {!enBackstage.length && !(pantalla && !pantalla.enEscenario) && <p className="text-[13px] text-tenue">Nadie en backstage</p>}
+                {pantalla && !pantalla.enEscenario && (
+                  <div className="flex w-52 flex-col gap-1.5" data-testid="tarjeta-pantalla">
+                    <Mosaico nombre="Pantalla" etiqueta={pantalla.nombre} pantalla pista={miPantalla(pantalla.de)} className="aspect-video rounded-xl">
+                      <Velo />
+                      <ClicParaMover data-testid="subir-pantalla" texto="Clic para subir al escenario" onClick={() => pantallaAlEscenario(true)} />
+                    </Mosaico>
+                    <p className="text-[12px] text-tenue">{pantalla.audio ? 'Con sonido.' : 'Sin sonido.'} Solo la ve el equipo hasta que la subas.</p>
+                  </div>
+                )}
                 {enBackstage.map((p) => (
                   <div key={p.id} className="flex w-52 flex-col gap-1.5" data-testid={`tarjeta-backstage-${p.nombre}`}>
                     <Mosaico nombre={p.nombre} pista={camaraDe(salaSesion, p.id)} className="aspect-video rounded-xl">

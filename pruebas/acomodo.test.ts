@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { acomodo, columnasPara, ordenar } from '../src/lib/acomodo';
+import { ID_PANTALLA } from '../compartido/tipos';
+import { acomodo, columnasPara, disenoConPantalla, ordenar } from '../src/lib/acomodo';
 
 describe('acomodo del escenario', () => {
   it('sin gente no hay filas', () => {
@@ -58,5 +59,30 @@ describe('orden según el diseño', () => {
     const copia = [...gente];
     ordenar(gente, { ...base, tipo: 'foco', fijado: 'c' });
     expect(gente).toEqual(copia);
+  });
+});
+
+describe('diseño con una pantalla compartida en el escenario', () => {
+  const diseno = { tipo: 'lado', fijado: 'b', forma: 'circulo', ajuste: 'llenar', fondo: 'negro' } as const;
+  const items = [{ id: ID_PANTALLA }, { id: 'a' }, { id: 'b' }];
+
+  it('sin pantalla no cambia nada (misma referencia)', () => {
+    expect(disenoConPantalla(diseno, false)).toBe(diseno);
+  });
+
+  it('con pantalla: foco con tira abajo y la pantalla fijada; la forma, el ajuste y el fondo se respetan', () => {
+    expect(disenoConPantalla(diseno, true)).toEqual({ tipo: 'tira-abajo', fijado: ID_PANTALLA, forma: 'circulo', ajuste: 'llenar', fondo: 'negro' });
+  });
+
+  it('con pantalla, la pantalla va primero (grande) aunque el equipo hubiera fijado a otra persona', () => {
+    expect(ordenar(items, disenoConPantalla(diseno, true)).map((p) => p.id)).toEqual([ID_PANTALLA, 'a', 'b']);
+    const pantallaAlFinal = [{ id: 'a' }, { id: 'b' }, { id: ID_PANTALLA }];
+    expect(ordenar(pantallaAlFinal, disenoConPantalla({ ...diseno, tipo: 'auto' }, true)).map((p) => p.id)).toEqual([ID_PANTALLA, 'a', 'b']);
+  });
+
+  it('no modifica el diseño original', () => {
+    const copia = { ...diseno };
+    disenoConPantalla(diseno, true);
+    expect(diseno).toEqual(copia);
   });
 });

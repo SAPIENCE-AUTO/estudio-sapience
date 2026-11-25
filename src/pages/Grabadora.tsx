@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Room, Track, type RemoteAudioTrack } from 'livekit-client';
-import type { EstadoGrabadora } from '../../compartido/tipos';
+import { ID_PANTALLA, type EstadoGrabadora } from '../../compartido/tipos';
+import { disenoConPantalla } from '../lib/acomodo';
 import { useCanal } from '../lib/canal';
-import { camaraDe, useCambiosDeSala } from '../lib/sala';
+import { camaraDe, pantallaDe, sonidoPantallaDe, useCambiosDeSala } from '../lib/sala';
 import { Lienzo } from '../components/Lienzo';
 import { Mosaico } from '../components/Mosaico';
 import { AudioRemoto } from '../components/Video';
@@ -60,12 +61,16 @@ export default function Grabadora() {
   const sonidos = escena
     .map((p) => room?.remoteParticipants.get(p.id)?.getTrackPublication(Track.Source.Microphone)?.track)
     .filter(Boolean) as RemoteAudioTrack[];
+  // El sonido de la pantalla compartida solo se escucha si el servidor dice que ya está en el escenario (en backstage esta página podría recibirlo, pero no lo reproduce).
+  const sonidoPantalla = estado?.pantalla ? sonidoPantallaDe(room, estado.pantalla.de) : null;
+  if (sonidoPantalla) sonidos.push(sonidoPantalla);
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-black" data-testid="grabadora">
       <div style={{ width: 'min(100vw, calc(100vh * 16 / 9))' }}>
-        <Lienzo data-testid="escena-grabadora" className="rounded-none!" diseno={estado?.diseno ?? { tipo: 'auto', fijado: null, forma: 'redondeada', ajuste: 'llenar', fondo: 'gris' }}
-          items={escena.map((p) => ({ id: p.id, nodo: <Mosaico nombre={p.nombre} pista={camaraDe(room, p.id)} className="h-full w-full" /> }))} />
+        <Lienzo data-testid="escena-grabadora" className="rounded-none!" diseno={disenoConPantalla(estado?.diseno ?? { tipo: 'auto', fijado: null, forma: 'redondeada', ajuste: 'llenar', fondo: 'gris' }, !!estado?.pantalla)}
+          items={[...(estado?.pantalla ? [{ id: ID_PANTALLA, nodo: <Mosaico nombre="Pantalla" etiqueta={estado.pantalla.nombre} pantalla pista={pantallaDe(room, estado.pantalla.de)} className="h-full w-full" /> }] : []),
+            ...escena.map((p) => ({ id: p.id, nodo: <Mosaico nombre={p.nombre} pista={camaraDe(room, p.id)} className="h-full w-full" /> }))]} />
       </div>
       {sonidos.map((t) => <AudioRemoto key={t.sid} pista={t} />)}
     </div>

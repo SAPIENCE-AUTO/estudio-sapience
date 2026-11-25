@@ -2,7 +2,7 @@
 // Todo lo que cambia una sesión pasa por UNA fila (una acción a la vez por sesión): así las ráfagas de clics no se pisan.
 // Cada acción trabaja sobre una copia y solo se confirma si LiveKit también respondió bien: nunca queda a medias.
 import { salaSesion } from '../compartido/tipos';
-import type { RespuestaAccion, RespuestaEntrar, RespuestaTokenEquipo, CanalChat, ConfigChat, Diseno } from '../compartido/tipos';
+import type { RespuestaAccion, RespuestaEntrar, RespuestaTokenEquipo, CanalChat, ConfigChat, Diseno, ModoPantalla } from '../compartido/tipos';
 import * as d from './dominio';
 import { almacenArchivo, almacenPostgres, type Almacen } from './almacen';
 import { avisoDeDireccion, crearPool, explicarFalloDeConexion } from './baseDeDatos';
@@ -238,6 +238,17 @@ export function ponerEnEscenario(sid: string, equipoId: string, enEscenario: boo
   return transaccion(sid, async (s) => { d.ponerMiembroEnEscenario(s, equipoId, enEscenario); return respuesta(s); });
 }
 
+// ---------- pantalla compartida ----------
+export function empezarPantalla(sid: string, equipoId: string, modo: ModoPantalla, audio: boolean): Promise<RespuestaAccion> {
+  return transaccion(sid, async (s) => { d.empezarPantalla(s, equipoId, modo, audio); return respuesta(s); });
+}
+export function detenerPantalla(sid: string, equipoId: string): Promise<RespuestaAccion> {
+  return transaccion(sid, async (s) => { d.detenerPantalla(s, equipoId); return respuesta(s); });
+}
+export function pantallaEnEscenario(sid: string, equipoId: string, enEscenario: boolean): Promise<RespuestaAccion> {
+  return transaccion(sid, async (s) => { d.ponerPantallaEnEscenario(s, equipoId, enEscenario); return respuesta(s); });
+}
+
 export async function tokenParaEquipo(sid: string, equipoId: string): Promise<RespuestaTokenEquipo> {
   const s = obtener(sid);
   const m = s.equipo[equipoId];
@@ -296,6 +307,8 @@ export async function iniciar(elegido?: Almacen): Promise<void> {
       await new Promise((r) => setTimeout(r, 3000));
     }
   }
+  // La pantalla compartida vive en el navegador de quien la comparte: tras reiniciar el servidor ya no hay nada que mostrar.
+  for (const s of Object.values(sesiones)) if (s.pantalla) { delete s.pantalla; s.version += 1; guardarPronto(sesiones); }
   for (const s of Object.values(sesiones)) {
     if (s.terminada) continue;
     for (const p of Object.values(s.participantes)) if (p.lugar !== 'lobby' && !p.conectado) vigilarAusencia(s.id, p.id);

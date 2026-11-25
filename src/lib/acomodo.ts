@@ -1,4 +1,4 @@
-import type { Diseno, TipoDiseno } from '../../compartido/tipos';
+import { ID_PANTALLA, type Diseno, type TipoDiseno } from '../../compartido/tipos';
 
 // Cómo se acomoda la gente dentro del escenario. El lienzo siempre es 16:9; lo que cambia es lo de adentro:
 // 1 persona ocupa todo, 2 van lado a lado, de 3 en adelante forman una cuadrícula y la última fila se centra.
@@ -22,6 +22,14 @@ export function acomodo(n: number): number[] {
   const base = Math.floor(cantidad / filas);
   const sobran = cantidad % filas;
   return Array.from({ length: filas }, (_, i) => base + (i < sobran ? 1 : 0));
+}
+
+/**
+ * Con una pantalla compartida en el escenario, la pantalla va grande y las personas en una tira abajo; la forma, el ajuste y el fondo que eligió el equipo se respetan.
+ * Es el mismo cálculo en todas las pantallas (consola, participantes y transmisión), así todos ven lo mismo. Si la pantalla va sola, ocupa todo.
+ */
+export function disenoConPantalla(diseno: Diseno, hayPantalla: boolean): Diseno {
+  return hayPantalla ? { ...diseno, tipo: 'tira-abajo', fijado: ID_PANTALLA } : diseno;
 }
 
 /** Los acomodos donde una persona va grande y las demás van aparte. */

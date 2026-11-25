@@ -1,7 +1,7 @@
 // Reglas de la sesión, sin red ni LiveKit: quién puede estar dónde y cómo se mueve.
 // Todo lo que cambia el estado sube la versión. Las acciones repetidas no cambian nada (así un doble clic no estorba).
 import { randomBytes, createHash } from 'node:crypto';
-import { AJUSTES_DISENO, FONDOS_DISENO, FORMAS_DISENO, MAX_TEXTO_CHAT, MAX_TITULO_HIGHLIGHT, TIPOS_DISENO, normalizarChat, normalizarDiseno, type CanalChat, type ConfigChat, type Diseno, type Lugar } from '../compartido/tipos';
+import { AJUSTES_DISENO, FONDOS_DISENO, FORMAS_DISENO, MAX_TEXTO_CHAT, MAX_TITULO_HIGHLIGHT, MODOS_PANTALLA, TIPOS_DISENO, normalizarChat, normalizarDiseno, type CanalChat, type ConfigChat, type Diseno, type Lugar, type ModoPantalla } from '../compartido/tipos';
 
 export class ErrorDominio extends Error {
   constructor(public codigo: 'NO_ENCONTRADO' | 'NO_PERMITIDO' | 'SESION_TERMINADA', mensaje: string) {
@@ -52,9 +52,13 @@ export interface Highlight {
   porNombre: string;
 }
 
+export interface Pantalla { de: string; nombre: string; modo: ModoPantalla; audio: boolean; enEscenario: boolean; desde: number }
+
 export interface Sesion {
   /** Momentos marcados por el equipo (los últimos 500). Nunca llegan a los participantes. */
   highlights?: Highlight[];
+  /** La pantalla que comparte alguien del equipo. Ausente si nadie comparte. No se conserva al reiniciar el servidor (la compartición vive en el navegador de quien comparte). */
+  pantalla?: Pantalla;
   /** La transmisión en curso (en LiveKit: el egress que manda el escenario a Mux). Ausente si no se está transmitiendo. */
   envivo?: { egressId: string; desde: number };
   /** Identificador del evento del calendario del Hub al que pertenece esta sesión (una sesión por evento). */
@@ -362,13 +366,54 @@ export function marcarConexion(s: Sesion, quien: { participanteId?: string; equi
   const o = quien.participanteId ? s.participantes[quien.participanteId] : quien.equipoId ? s.equipo[quien.equipoId] : undefined;
   if (!o || o.conectado === conectado) return false;
   o.conectado = conectado;
+  // La pantalla vive en el navegador de quien la comparte: si esa persona se desconecta, ya no hay nada que mostrar.
+  if (!conectado && quien.equipoId && s.pantalla?.de === quien.equipoId) delete s.pantalla;
   sube(s);
   return true;
+}
+
+// ───────── Pantalla compartida (solo el equipo comparte; una a la vez) ─────────
+
+/**
+ * Alguien del equipo empieza a compartir su pantalla. Nace en backstage (solo el equipo la ve). Si ya compartía y cambia de modo o de sonido
+ * (por ejemplo, vuelve a elegir qué compartir), se actualiza sin perder si estaba en el escenario. Si otra persona ya comparte, no se puede.
+ */
+export function empezarPantalla(s: Sesion, equipoId: string, modo: ModoPantalla, audio: boolean, ahora = Date.now()): { cambio: boolean } {
+  viva(s);
+  const m = miembro(s, equipoId);
+  if (!MODOS_PANTALLA.includes(modo)) throw new ErrorDominio('NO_PERMITIDO', 'Ese modo de pantalla no existe');
+  const actual = s.pantalla;
+  if (actual && actual.de !== equipoId) throw new ErrorDominio('NO_PERMITIDO', `${actual.nombre} ya está compartiendo su pantalla`);
+  if (actual && actual.modo === modo && actual.audio === audio) return { cambio: false };
+  s.pantalla = { de: equipoId, nombre: m.nombre, modo, audio, enEscenario: actual?.enEscenario ?? false, desde: actual?.desde ?? ahora };
+  sube(s);
+  return { cambio: true };
+}
+
+/** Cualquiera del equipo puede dejar de mostrar la pantalla de otro (por ejemplo, quien modera corta lo que comparte una productora). */
+export function detenerPantalla(s: Sesion, equipoId: string): { cambio: boolean } {
+  miembro(s, equipoId);
+  if (!s.pantalla) return { cambio: false };
+  delete s.pantalla;
+  sube(s);
+  return { cambio: true };
+}
+
+/** Sube la pantalla al escenario (la ven y la oyen todos) o la regresa a backstage (solo el equipo). */
+export function ponerPantallaEnEscenario(s: Sesion, equipoId: string, enEscenario: boolean): { cambio: boolean } {
+  viva(s);
+  miembro(s, equipoId);
+  if (!s.pantalla) throw new ErrorDominio('NO_ENCONTRADO', 'Nadie está compartiendo su pantalla');
+  if (s.pantalla.enEscenario === enEscenario) return { cambio: false };
+  s.pantalla.enEscenario = enEscenario;
+  sube(s);
+  return { cambio: true };
 }
 
 export function terminar(s: Sesion): boolean {
   if (s.terminada) return false;
   s.terminada = true;
+  delete s.pantalla;
   sube(s);
   return true;
 }

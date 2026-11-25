@@ -1,8 +1,11 @@
 // Ayudas para trabajar con una sala de LiveKit desde React.
 import { useEffect, useState } from 'react';
-import { Room, RoomEvent, Track } from 'livekit-client';
+import { Room, RoomEvent, Track, type RemoteAudioTrack } from 'livekit-client';
 import type { Lugar } from '../../compartido/tipos';
+import { mismosPermitidos, permisosDePistas, type Permitidos } from './permisos';
 import { traza } from './traza';
+
+export type { Permitidos };
 
 const EVENTOS = [
   RoomEvent.TrackSubscribed, RoomEvent.TrackUnsubscribed, RoomEvent.ParticipantConnected, RoomEvent.ParticipantDisconnected,
@@ -33,16 +36,56 @@ export function camaraDe(room: Room | null, identidad: string) {
   return room?.remoteParticipants.get(identidad)?.getTrackPublication(Track.Source.Camera)?.track ?? null;
 }
 
-export type Permitidos = 'todos' | string[];
+/** La pantalla compartida de alguien (video), si la comparte y no está silenciada. Sirve para la propia (local) y para la de otros. */
+export function pantallaDe(room: Room | null, identidad: string) {
+  if (!room) return null;
+  const quien = room.localParticipant.identity === identidad ? room.localParticipant : room.remoteParticipants.get(identidad);
+  const pub = quien?.getTrackPublication(Track.Source.ScreenShare);
+  return pub && !pub.isMuted ? pub.track ?? null : null;
+}
+
+/** El sonido de la pantalla compartida de otra persona (solo existe si el navegador de quien comparte lo pudo capturar). */
+export function sonidoPantallaDe(room: Room | null, identidad: string): RemoteAudioTrack | null {
+  return (room?.remoteParticipants.get(identidad)?.getTrackPublication(Track.Source.ScreenShareAudio)?.track as RemoteAudioTrack | undefined) ?? null;
+}
+
+/** Todo el sonido que se recibe de los demás: micrófonos y sonido de pantalla compartida. */
+export function pistasDeSonido(room: Room | null): RemoteAudioTrack[] {
+  if (!room) return [];
+  const pistas: RemoteAudioTrack[] = [];
+  for (const p of room.remoteParticipants.values()) {
+    for (const fuente of [Track.Source.Microphone, Track.Source.ScreenShareAudio]) {
+      const t = p.getTrackPublication(fuente)?.track;
+      if (t) pistas.push(t as RemoteAudioTrack);
+    }
+  }
+  return pistas;
+}
+
+const quitarProteccion = new WeakMap<Room, () => void>();
+const esDePantalla = (fuente: Track.Source) => fuente === Track.Source.ScreenShare || fuente === Track.Source.ScreenShareAudio;
 
 /**
  * Cada persona protege SUS pistas: solo quienes están en la lista pueden recibir su video y su audio.
  * Se llama ANTES de publicar y cada vez que cambia el lugar o el equipo.
+ * `pantalla` es quién puede recibir su PANTALLA COMPARTIDA (por defecto, los mismos que lo demás). Si es otro grupo (por ejemplo, la pantalla
+ * solo para el equipo mientras la cámara va a todos), las pistas se listan una por una y se vuelven a calcular cuando cambian las propias o llega alguien.
  */
-export function proteger(room: Room, permitidos: Permitidos): void {
-  traza('proteger-pistas', { a: permitidos === 'todos' ? 'todos' : `${permitidos.length} personas` });
-  if (permitidos === 'todos') room.localParticipant.setTrackSubscriptionPermissions(true);
-  else room.localParticipant.setTrackSubscriptionPermissions(false, permitidos.map((id) => ({ participantIdentity: id, allowAll: true })));
+export function proteger(room: Room, permitidos: Permitidos, pantalla: Permitidos = permitidos): void {
+  traza('proteger-pistas', { a: permitidos === 'todos' ? 'todos' : `${permitidos.length} personas`, pantalla: pantalla === 'todos' ? 'todos' : `${pantalla.length} personas` });
+  quitarProteccion.get(room)?.();
+  quitarProteccion.delete(room);
+  const yo = room.localParticipant;
+  const aplicar = () => {
+    const pistas = [...yo.trackPublications.values()].filter((p) => p.trackSid).map((p) => ({ sid: p.trackSid, esPantalla: esDePantalla(p.source) }));
+    const r = permisosDePistas({ permitidos, pantalla, conocidos: [...room.remoteParticipants.keys()], pistas });
+    yo.setTrackSubscriptionPermissions(r.todos, r.porPersona);
+  };
+  aplicar();
+  if (mismosPermitidos(permitidos, pantalla)) return;
+  const eventos = [RoomEvent.LocalTrackPublished, RoomEvent.LocalTrackUnpublished, RoomEvent.ParticipantConnected, RoomEvent.ParticipantDisconnected] as const;
+  for (const e of eventos) room.on(e as RoomEvent.LocalTrackPublished, aplicar);
+  quitarProteccion.set(room, () => { for (const e of eventos) room.off(e as RoomEvent.LocalTrackPublished, aplicar); });
 }
 
 /** Escenario: lo recibe cualquiera. Sala verde: solo quien me llamó (es privado). Backstage: solo el equipo. */
